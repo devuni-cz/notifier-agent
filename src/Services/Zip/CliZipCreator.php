@@ -81,14 +81,43 @@ final class CliZipCreator implements ZipCreator
             );
         }
 
+        // PHP can hold a stale stat result from before 7z ran; on network
+        // filesystems and symlinked deploy targets (Forge releases/) the
+        // freshly-written file may not show up on the first stat call.
+        // Force a re-stat before checking existence.
+        clearstatcache(true, $zipPath);
+
         if (! file_exists($zipPath)) {
+            // 7z reported success but no archive landed at $zipPath. This is
+            // intermittent on some 7z builds with stdin-password + symlinked
+            // storage paths. Rather than losing the entire backup run, fall
+            // back to PHP's ZipArchive when it's available.
+            if (PhpZipCreator::isAvailable()) {
+                $logger->warning(
+                    '⚠️ CLI 7z exited 0 but archive is missing, falling back to PHP ZipArchive',
+                    [
+                        'zip_path' => $zipPath,
+                        'cwd' => $cwd,
+                        'source' => $sourcePath,
+                        'stderr' => $process->getErrorOutput(),
+                    ],
+                );
+
+                return (new PhpZipCreator($this->notifierLogger))
+                    ->create($sourcePath, $zipPath, $password, $excludedFiles);
+            }
+
             throw new RuntimeException(
                 'ZIP file was not created at: '.$zipPath
-                .'. 7z stdout: '.($process->getOutput() ?: '(empty)')
+                .' (CLI 7z exited 0 but the file is missing and PHP zip extension is not available for fallback).'
+                .' 7z stdout: '.($process->getOutput() ?: '(empty)')
                 .'. 7z stderr: '.($process->getErrorOutput() ?: '(empty)')
                 .'. Source: '.$sourcePath
                 .'. Source exists: '.(file_exists($sourcePath) ? 'yes' : 'no')
                 .'. Source size: '.(file_exists($sourcePath) ? (string) filesize($sourcePath) : 'N/A')
+                .'. CWD: '.$cwd
+                .'. ZIP dir exists: '.(is_dir(dirname($zipPath)) ? 'yes' : 'no')
+                .'. ZIP dir writable: '.(is_writable(dirname($zipPath)) ? 'yes' : 'no')
             );
         }
 
