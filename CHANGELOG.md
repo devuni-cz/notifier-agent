@@ -5,6 +5,15 @@ All notable changes to `devuni/notifier-package` will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.4] - 2026-05-08
+
+### Fixed
+
+-   **`CliZipCreator`**: When `7z` returned exit code 0 but no archive landed at the expected path (intermittent on Forge releases/ symlinked storage paths combined with stdin password), the whole backup run was lost with `RuntimeException: ZIP file was not created at: ...`. Two recovery layers added:
+    -   `clearstatcache(true, $zipPath)` is called before the existence check so PHP's pre-7z cached stat result can't produce a false negative on network filesystems and freshly-symlinked deploy targets.
+    -   When the archive is still missing after the re-stat **and** the PHP `zip` extension is available, `CliZipCreator` now falls back to `PhpZipCreator` automatically and continues the run. The fallback is logged as a warning so the underlying issue stays visible.
+-   When neither path produces an archive (CLI failed late + PHP zip extension not loaded), the thrown `RuntimeException` now also reports the working directory and the destination directory's existence + writability, making the next failure straightforward to triage.
+
 ## [2.6.3] - 2026-04-22
 
 ### Security
