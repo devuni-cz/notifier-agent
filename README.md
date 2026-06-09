@@ -68,15 +68,26 @@ curl -X POST https://your-app.com/api/notifier/backup \
 
 On failure the response returns an opaque `error_id` (UUID) - the full detail (stack trace, `mysqldump`/7z stderr) stays in your `backup` log channel. Grep logs for the UUID to correlate.
 
-### Announcements (opt-in)
+### Announcements
 
-Pull this site's maintenance/announcement notices from the central server and render them in your own dashboard. Off by default - enable with `NOTIFIER_ANNOUNCEMENTS_ENABLED=true`, then drop the component anywhere:
+Pull this site's maintenance/announcement notices from the central server and show them in your dashboard. **On by default** - it costs nothing until `NOTIFIER_URL` is set (the service no-ops without a target). Disable with `NOTIFIER_ANNOUNCEMENTS_ENABLED=false`.
+
+**Filament hosts** (the common case): when Filament is installed, the notices are **auto-injected** as a banner into every panel page via a render hook - nothing to place. Move the spot with `NOTIFIER_ANNOUNCEMENTS_FILAMENT_HOOK` (default `panels::content.start`; also `panels::body.start`, `panels::topbar.end`), or turn the auto-injection off with `NOTIFIER_ANNOUNCEMENTS_FILAMENT=false`. Works across Filament v3/v4/v5.
+
+**Blade hosts:** drop the component anywhere:
 
 ```blade
 <x-notifier-announcements-notice />
 ```
 
-Requests are **per-repository** and reuse your existing `NOTIFIER_URL` + `X-Notifier-Token` (`GET {NOTIFIER_URL}/announcements`), so the server returns only this site's announcements - no other repositories are disclosed. Responses are cached (`NOTIFIER_ANNOUNCEMENTS_CACHE_TTL`, default 900 s) so the dashboard never blocks on a live request, and any fetch failure renders nothing rather than breaking your dashboard. Customize the markup with `vendor:publish --tag="notifier-views"`, or render it yourself from `app(\Devuni\Notifier\Services\AnnouncementsService::class)->activeAnnouncements()`.
+**Inertia / Vue / React hosts:** the service is framework-agnostic - render it yourself:
+
+```php
+app(\Devuni\Notifier\Services\AnnouncementsService::class)->activeAnnouncements();
+// e.g. share as an Inertia prop, then render it in your own component.
+```
+
+Requests are **per-repository** and reuse your existing `NOTIFIER_URL` + `X-Notifier-Token` (`GET {NOTIFIER_URL}/announcements`), so the server returns only this site's announcements - no other repositories are disclosed. Responses are cached (`NOTIFIER_ANNOUNCEMENTS_CACHE_TTL`, default 900 s) so the dashboard never blocks on a live request, and any fetch failure renders nothing rather than breaking your dashboard. Customize the Blade markup with `vendor:publish --tag="notifier-views"`.
 
 ## Configure
 

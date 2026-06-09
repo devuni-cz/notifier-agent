@@ -101,6 +101,8 @@ final class NotifierServiceProvider extends ServiceProvider
             AnnouncementsNotice::class,
         ]);
 
+        $this->registerFilamentAnnouncements();
+
         if (config('notifier.routes_enabled', true)) {
             $this->loadRoutesFrom(self::basePath('/routes/web.php'));
         }
@@ -137,5 +139,36 @@ final class NotifierServiceProvider extends ServiceProvider
                 .'Supported drivers: mysql, mariadb, pgsql.'
             ),
         };
+    }
+
+    /**
+     * Auto-inject the active announcements as a banner into Filament panels via a
+     * render hook. No-ops unless the announcements feature is on, the Filament
+     * integration is enabled, and Filament is actually installed in the host app -
+     * so non-Filament hosts (and the package's own tests) are never touched.
+     *
+     * The render hook is identified by a plain string, which is stable across
+     * Filament v3/v4/v5, so no Filament class is referenced at the type level.
+     */
+    private function registerFilamentAnnouncements(): void
+    {
+        if (! config('notifier.features.announcements', true)) {
+            return;
+        }
+
+        if (! config('notifier.announcements.filament.enabled', true)) {
+            return;
+        }
+
+        if (! class_exists(\Filament\Support\Facades\FilamentView::class)) {
+            return;
+        }
+
+        \Filament\Support\Facades\FilamentView::registerRenderHook(
+            (string) config('notifier.announcements.filament.render_hook', 'panels::content.start'),
+            fn (): string => view('notifier::filament.announcements', [
+                'announcements' => $this->app->make(AnnouncementsService::class)->activeAnnouncements(),
+            ])->render(),
+        );
     }
 }

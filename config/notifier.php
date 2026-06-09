@@ -207,14 +207,15 @@ return [
     | Feature Toggles
     |--------------------------------------------------------------------------
     |
-    | Opt-in switches for agent features beyond backups. A backup-only install
-    | can leave these off and carries no extra behavior or HTTP traffic.
+    | Switches for agent features beyond backups. Announcements are ON by default
+    | but cost nothing until NOTIFIER_URL is configured - the service no-ops and
+    | makes no HTTP call without a target, so a backup-only install is unaffected.
     |
     */
     'features' => [
-        // Pull this site's maintenance/announcement announcements from the central
+        // Pull this site's maintenance/announcement notices from the central
         // server and expose them for rendering in your own dashboard.
-        'announcements' => env('NOTIFIER_ANNOUNCEMENTS_ENABLED', false),
+        'announcements' => env('NOTIFIER_ANNOUNCEMENTS_ENABLED', true),
     ],
 
     /*
@@ -238,5 +239,21 @@ return [
 
         // HTTP timeout (seconds) for the announcements request.
         'timeout' => (int) env('NOTIFIER_ANNOUNCEMENTS_TIMEOUT', 5),
+
+        /*
+        | Filament integration. When the host app uses Filament, the package can
+        | auto-inject the active announcements as a banner into every panel page
+        | via a Filament render hook - no manual placement needed. Registered only
+        | when Filament is actually installed, so non-Filament hosts are unaffected.
+        */
+        'filament' => [
+            // Auto-inject the announcements banner into Filament panels.
+            'enabled' => env('NOTIFIER_ANNOUNCEMENTS_FILAMENT', true),
+
+            // Which Filament render hook to inject at. A plain string keeps this
+            // version-agnostic across Filament v3/v4/v5. Default: top of the page
+            // content. Alternatives: 'panels::body.start', 'panels::topbar.end'.
+            'render_hook' => env('NOTIFIER_ANNOUNCEMENTS_FILAMENT_HOOK', 'panels::content.start'),
+        ],
     ],
 ];
