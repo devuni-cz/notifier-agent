@@ -5,13 +5,18 @@ All notable changes to `devuni/notifier-agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.1] - 2026-06-10
+
+### Changed
+
+-   **`devuni/notifier-agent` and `devuni/notifier-package` are independent packages.** Removed the `"replace"` declaration that `3.0.0` carried — `notifier-agent` no longer claims to replace `notifier-package`. They are separate, separately-maintained packages: `notifier-package` stays the lean **backups-only** option, `notifier-agent` is the **full agent** (backups + announcements + more). Neither is abandoned; an app picks whichever it needs.
+
 ## [3.0.0] - 2026-06-09
 
 ### Changed
 
--   **Renamed `devuni/notifier-package` → `devuni/notifier-agent`** and moved development to a new repository: <https://github.com/devuni-cz/notifier-agent>. The package has grown from a one-way backup shipper into a two-way client of the Notifier control plane (backups + announcements, with more to come), so the name now reflects what it is — the **agent** installed in each app. The PHP namespace stays `Devuni\Notifier\`, so there are no code changes in your app beyond the Composer name.
-    -   **Migrate:** `composer remove devuni/notifier-package && composer require devuni/notifier-agent`. A `"replace"` entry keeps the old name resolving during the transition, so a mixed dependency tree won't conflict.
-    -   The old `devuni/notifier-package` package is **abandoned** (pointing here) and frozen at `2.8.0`; all further development happens here.
+-   **`devuni/notifier-agent` — the full client agent of the Notifier control plane**, in its own repository: <https://github.com/devuni-cz/notifier-agent>. It carries everything `devuni/notifier-package` does (encrypted backups, same `Devuni\Notifier\` namespace) plus the two-way features — announcements today, more (logging, heartbeat…) to come. An app that wants those features runs `composer require devuni/notifier-agent`; the namespace is unchanged, so switching is just a Composer name change.
+    -   **`devuni/notifier-package` continues as a separate, lean backups-only package — it is _not_ abandoned.** The two packages are maintained independently; an app uses whichever fits.
 
 ### Notes
 
@@ -536,7 +541,8 @@ NOTIFIER_LOGGING_CHANNEL=backup
 -   GitHub Actions CI/CD
 -   Documentation and examples
 
-[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v3.0.1...HEAD
+[3.0.1]: https://github.com/devuni-cz/notifier-agent/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/devuni-cz/notifier-agent/releases/tag/v3.0.0
 [2.7.0]: https://github.com/devuni-cz/notifier-package/compare/v2.6.4...v2.7.0
 [2.6.3]: https://github.com/devuni-cz/notifier-package/compare/v2.6.2...v2.6.3
