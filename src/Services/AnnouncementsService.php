@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Devuni\Notifier\Services;
 
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 use Throwable;
 
 /**
@@ -23,6 +22,7 @@ use Throwable;
 final class AnnouncementsService
 {
     public function __construct(
+        private readonly NotifierApiClient $api,
         private readonly NotifierLoggerService $notifierLogger,
     ) {}
 
@@ -51,7 +51,7 @@ final class AnnouncementsService
             return $cached;
         }
 
-        return $this->fetchAndCache($baseUrl, $cacheKey);
+        return $this->fetchAndCache($cacheKey);
     }
 
     /**
@@ -78,24 +78,20 @@ final class AnnouncementsService
     /**
      * @return list<array<string, mixed>>
      */
-    private function fetchAndCache(string $baseUrl, string $cacheKey): array
+    private function fetchAndCache(string $cacheKey): array
     {
-        $token = config('notifier.backup_code');
         $timeout = (int) config('notifier.announcements.timeout', 5);
 
         try {
-            $response = Http::timeout($timeout)
-                // The shared secret rides on this request - never follow a redirect
-                // with it attached (Guzzle re-sends custom headers across redirects).
-                ->withOptions(['allow_redirects' => false])
-                ->withHeaders(['X-Notifier-Token' => (string) $token])
-                ->get(mb_rtrim($baseUrl, '/').'/announcements');
+            // All transport invariants (HTTPS-only, token, no-redirect) live in the
+            // shared client, so this pull can never leak the secret over cleartext.
+            $response = $this->api->get('/announcements', $timeout);
         } catch (Throwable $e) {
             return $this->cacheFailure($cacheKey, $e->getMessage());
         }
 
         if (! $response->successful()) {
-            return $this->cacheFailure($cacheKey, 'HTTP '.$response->status());
+            return $this->cacheFailure($cacheKey, 'HTTP '.$response->status().' - '.$this->api->formatError($response));
         }
 
         $announcements = $response->json('announcements');

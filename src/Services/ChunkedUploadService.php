@@ -4,15 +4,13 @@ declare(strict_types=1);
 
 namespace Devuni\Notifier\Services;
 
-use GuzzleHttp\Promise\PromiseInterface;
-use Illuminate\Http\Client\Response;
-use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Throwable;
 
 final class ChunkedUploadService
 {
     public function __construct(
+        private readonly NotifierApiClient $api,
         private readonly NotifierLoggerService $notifierLogger,
     ) {}
 
@@ -27,13 +25,10 @@ final class ChunkedUploadService
     {
         $logger = $this->notifierLogger->get();
 
-        $baseUrl = config('notifier.backup_url');
+        // Validate the target up front: the shared client enforces HTTPS-only and
+        // throws before any chunking work begins if NOTIFIER_URL is missing/insecure.
+        $this->api->baseUrl();
 
-        if (! str_starts_with($baseUrl, 'https://')) {
-            throw new RuntimeException('Backup URL must use HTTPS: '.$baseUrl);
-        }
-
-        $token = config('notifier.backup_code');
         $chunkSize = (int) config('notifier.chunk_size', 20 * 1024 * 1024);
         $fileSize = filesize($path);
 
@@ -58,7 +53,7 @@ final class ChunkedUploadService
         ]);
 
         // Phase 1: Init upload
-        $uploadId = $this->initUpload($baseUrl, $token, $backupType, $filename, $fileSize, $totalChunks, $checksum);
+        $uploadId = $this->initUpload($backupType, $filename, $fileSize, $totalChunks, $checksum);
 
         $logger->info('✅ upload initialized', ['upload_id' => $uploadId]);
 
@@ -93,7 +88,7 @@ final class ChunkedUploadService
                 }
 
                 try {
-                    $this->sendChunk($baseUrl, $token, $uploadId, $chunkNumber, $tmpPath);
+                    $this->sendChunk($uploadId, $chunkNumber, $tmpPath);
                 } finally {
                     @unlink($tmpPath);
                 }
@@ -105,37 +100,29 @@ final class ChunkedUploadService
         }
 
         // Phase 3: Finalize
-        $this->finalizeUpload($baseUrl, $token, $uploadId);
+        $this->finalizeUpload($uploadId);
 
         $logger->info('✅ chunked upload finalized');
     }
 
     private function initUpload(
-        string $baseUrl,
-        string $token,
         string $backupType,
         string $filename,
         int $fileSize,
         int $totalChunks,
         string $checksum,
     ): string {
-        $response = Http::timeout(30)
-            // Never follow a redirect on a token-bearing request: Guzzle re-sends
-            // custom headers (it only strips Authorization/Cookie cross-origin), so a
-            // 30x from the backup origin would relay X-Notifier-Token to the target.
-            ->withOptions(['allow_redirects' => false])
-            ->withHeaders(['X-Notifier-Token' => $token])
-            ->post(mb_rtrim($baseUrl, '/').'/uploads/init', [
-                'backup_type' => $backupType,
-                'filename' => $filename,
-                'total_size' => $fileSize,
-                'total_chunks' => $totalChunks,
-                'checksum' => $checksum,
-            ]);
+        $response = $this->api->post('/uploads/init', [
+            'backup_type' => $backupType,
+            'filename' => $filename,
+            'total_size' => $fileSize,
+            'total_chunks' => $totalChunks,
+            'checksum' => $checksum,
+        ], 30);
 
         if (! $response->successful()) {
             throw new RuntimeException(
-                'Failed to initialize upload: HTTP '.$response->status().' - '.$this->formatErrorResponse($response)
+                'Failed to initialize upload: HTTP '.$response->status().' - '.$this->api->formatError($response)
             );
         }
 
@@ -149,8 +136,6 @@ final class ChunkedUploadService
     }
 
     private function sendChunk(
-        string $baseUrl,
-        string $token,
         string $uploadId,
         int $chunkNumber,
         string $chunkPath,
@@ -159,7 +144,7 @@ final class ChunkedUploadService
     ): void {
         $logger = $this->notifierLogger->get();
         $lastException = null;
-        $url = mb_rtrim($baseUrl, '/').'/uploads/'.$uploadId.'/chunks/'.$chunkNumber;
+        $path = '/uploads/'.$uploadId.'/chunks/'.$chunkNumber;
         $chunkChecksum = hash_file('sha256', $chunkPath);
 
         if ($chunkChecksum === false) {
@@ -174,14 +159,14 @@ final class ChunkedUploadService
                     throw new RuntimeException("Failed to open chunk file for reading: {$chunkPath}");
                 }
 
-                $response = Http::timeout(120)
-                    ->withOptions(['allow_redirects' => false])
-                    ->withHeaders([
-                        'X-Notifier-Token' => $token,
-                        'X-Chunk-Checksum' => $chunkChecksum,
-                    ])
-                    ->attach('chunk', $stream, 'chunk_'.$chunkNumber)
-                    ->post($url);
+                $response = $this->api->attachStream(
+                    $path,
+                    'chunk',
+                    $stream,
+                    'chunk_'.$chunkNumber,
+                    ['X-Chunk-Checksum' => $chunkChecksum],
+                    120,
+                );
 
                 if ($response->successful()) {
                     return;
@@ -195,11 +180,11 @@ final class ChunkedUploadService
                 } elseif ($response->status() >= 400 && $response->status() < 500) {
                     // Don't retry other 4xx errors (client mistakes)
                     throw new RuntimeException(
-                        "Chunk {$chunkNumber} rejected: HTTP ".$response->status().' - '.$this->formatErrorResponse($response)
+                        "Chunk {$chunkNumber} rejected: HTTP ".$response->status().' - '.$this->api->formatError($response)
                     );
                 } else {
                     $lastException = new RuntimeException(
-                        "Chunk {$chunkNumber} failed: HTTP ".$response->status().' - '.$this->formatErrorResponse($response)
+                        "Chunk {$chunkNumber} failed: HTTP ".$response->status().' - '.$this->api->formatError($response)
                     );
                 }
             } catch (RuntimeException $e) {
@@ -219,16 +204,13 @@ final class ChunkedUploadService
         throw $lastException ?? new RuntimeException("Chunk {$chunkNumber} failed after {$maxAttempts} attempts");
     }
 
-    private function finalizeUpload(string $baseUrl, string $token, string $uploadId): void
+    private function finalizeUpload(string $uploadId): void
     {
-        $response = Http::timeout(60)
-            ->withOptions(['allow_redirects' => false])
-            ->withHeaders(['X-Notifier-Token' => $token])
-            ->post(mb_rtrim($baseUrl, '/').'/uploads/'.$uploadId.'/finalize');
+        $response = $this->api->post('/uploads/'.$uploadId.'/finalize', [], 60);
 
         if (! $response->successful()) {
             throw new RuntimeException(
-                'Failed to finalize upload: HTTP '.$response->status().' - '.$this->formatErrorResponse($response)
+                'Failed to finalize upload: HTTP '.$response->status().' - '.$this->api->formatError($response)
             );
         }
 
@@ -243,10 +225,10 @@ final class ChunkedUploadService
 
             // The secret token is about to be attached to status_url. Never send it
             // anywhere but the configured, HTTPS backup origin - the rest of the
-            // package enforces the same HTTPS-only invariant (see upload()).
-            $this->assertTrustedStatusUrl($statusUrl, $baseUrl);
+            // package enforces the same HTTPS-only invariant (see NotifierApiClient).
+            $this->assertTrustedStatusUrl($statusUrl, $this->api->baseUrl());
 
-            $this->waitForCompletion($statusUrl, $token, $uploadId);
+            $this->waitForCompletion($statusUrl, $uploadId);
         }
     }
 
@@ -256,7 +238,6 @@ final class ChunkedUploadService
      */
     private function waitForCompletion(
         string $statusUrl,
-        string $token,
         string $uploadId,
         int $maxWaitSeconds = 1800,
         int $pollIntervalSeconds = 5,
@@ -269,10 +250,7 @@ final class ChunkedUploadService
             sleep($pollIntervalSeconds);
 
             try {
-                $response = Http::timeout(30)
-                    ->withOptions(['allow_redirects' => false])
-                    ->withHeaders(['X-Notifier-Token' => $token])
-                    ->get($statusUrl);
+                $response = $this->api->getAbsolute($statusUrl, 30);
             } catch (Throwable $e) {
                 $consecutiveErrors++;
                 $logger->warning("⚠️ status poll failed (attempt {$consecutiveErrors})", [
@@ -294,7 +272,7 @@ final class ChunkedUploadService
 
                 if ($consecutiveErrors >= 5) {
                     throw new RuntimeException(
-                        'Status polling kept returning HTTP '.$response->status().' - '.$this->formatErrorResponse($response),
+                        'Status polling kept returning HTTP '.$response->status().' - '.$this->api->formatError($response),
                     );
                 }
 
@@ -356,36 +334,5 @@ final class ChunkedUploadService
         if (($base['port'] ?? 443) !== ($target['port'] ?? 443)) {
             throw new RuntimeException('Refusing to poll status_url on unexpected port: '.$statusUrl);
         }
-    }
-
-    /**
-     * Extract a meaningful error detail from the server response.
-     *
-     * Laravel APIs typically return JSON with "message" and/or "errors" keys.
-     * Falls back to raw body if the response is not JSON.
-     */
-    private function formatErrorResponse(Response|PromiseInterface $response): string
-    {
-        $json = $response->json();
-
-        if (is_array($json)) {
-            if (isset($json['message']) && is_string($json['message'])) {
-                $detail = $json['message'];
-
-                if (isset($json['errors']) && is_array($json['errors'])) {
-                    $detail .= ' '.json_encode($json['errors'], JSON_UNESCAPED_UNICODE);
-                }
-
-                return $detail;
-            }
-
-            if (isset($json['errors']) && is_array($json['errors'])) {
-                return json_encode($json['errors'], JSON_UNESCAPED_UNICODE);
-            }
-        }
-
-        $body = $response->body();
-
-        return $body !== '' ? $body : '(empty response)';
     }
 }

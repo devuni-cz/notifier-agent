@@ -61,6 +61,14 @@ describe('AnnouncementsService::activeAnnouncements', function () {
         Http::assertNothingSent();
     });
 
+    it('refuses to send the token over a non-HTTPS URL (never leaks the secret in cleartext)', function () {
+        config(['notifier.backup_url' => 'http://insecure.example.com/api/v1/repositories/1']);
+        Http::fake(['*' => Http::response(['announcements' => [['content' => 'x']]], 200)]);
+
+        expect(announcementsService()->activeAnnouncements())->toBe([]);
+        Http::assertNothingSent();
+    });
+
     it('returns an empty array (and does not throw) on a server error', function () {
         Http::fake(['*' => Http::response('boom', 500)]);
 

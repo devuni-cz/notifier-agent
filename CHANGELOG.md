@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 -   The feature is **on by default** but makes no HTTP call until `NOTIFIER_URL` is configured, so a backup-only install carries no extra traffic. It pairs with a matching `GET /api/v1/repositories/{id}/announcements` endpoint on `notifier-devuni-cz` (server side, separate).
 
+### Changed
+
+-   **All server communication now flows through a single `NotifierApiClient`.** The HTTPS-only enforcement, the `X-Notifier-Token` header, redirect-disabling, base-URL resolution, and JSON error formatting that were duplicated across `ChunkedUploadService` (push) and `AnnouncementsService` (pull) now live in one transport. New agent capabilities inherit these invariants and cannot accidentally omit one. Backup-upload behavior is unchanged (all existing tests pass).
+
+### Security
+
+-   **The announcements pull is now HTTPS-only, matching the backup path.** Previously `AnnouncementsService` did not enforce `https://` on `NOTIFIER_URL`, so a misconfigured `http://` URL would have sent the `X-Notifier-Token` secret over cleartext. Centralizing the transport in `NotifierApiClient` closes that gap: the token is never attached to a non-HTTPS request — the pull logs and returns nothing instead.
+
 ## [2.7.1] - 2026-06-09
 
 ### Security

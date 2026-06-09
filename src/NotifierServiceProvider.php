@@ -14,6 +14,7 @@ use Devuni\Notifier\Services\AnnouncementsService;
 use Devuni\Notifier\Services\ChunkedUploadService;
 use Devuni\Notifier\Services\Database\MysqlDumper;
 use Devuni\Notifier\Services\Database\PostgresDumper;
+use Devuni\Notifier\Services\NotifierApiClient;
 use Devuni\Notifier\Services\NotifierConfigService;
 use Devuni\Notifier\Services\NotifierDatabaseService;
 use Devuni\Notifier\Services\NotifierLoggerService;
@@ -35,6 +36,7 @@ final class NotifierServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(self::basePath('/config/notifier.php'), 'notifier');
 
+        $this->app->singleton(NotifierApiClient::class);
         $this->app->singleton(NotifierConfigService::class);
         $this->app->singleton(ChunkedUploadService::class);
         $this->app->singleton(NotifierDatabaseService::class);
