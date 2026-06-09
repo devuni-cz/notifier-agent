@@ -201,4 +201,42 @@ return [
     |
     */
     'queue_connection' => env('NOTIFIER_QUEUE_CONNECTION', 'sync'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Feature Toggles
+    |--------------------------------------------------------------------------
+    |
+    | Opt-in switches for agent features beyond backups. A backup-only install
+    | can leave these off and carries no extra behavior or HTTP traffic.
+    |
+    */
+    'features' => [
+        // Pull this site's maintenance/announcement announcements from the central
+        // server and expose them for rendering in your own dashboard.
+        'announcements' => env('NOTIFIER_ANNOUNCEMENTS_ENABLED', false),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Announcements
+    |--------------------------------------------------------------------------
+    |
+    | When the `announcements` feature is enabled, the package fetches this site's
+    | active announcements from `{NOTIFIER_URL}/announcements` (per-repository, authenticated
+    | with the same X-Notifier-Token). Responses are cached so the consumer
+    | dashboard never makes a blocking request on every page load.
+    |
+    */
+    'announcements' => [
+        // Seconds a successful response is cached. Default 15 minutes.
+        'cache_ttl' => (int) env('NOTIFIER_ANNOUNCEMENTS_CACHE_TTL', 900),
+
+        // Seconds to negative-cache an empty result after a fetch failure, so a
+        // down/slow server doesn't make every dashboard load pay the timeout.
+        'failure_cache_ttl' => (int) env('NOTIFIER_ANNOUNCEMENTS_FAILURE_CACHE_TTL', 60),
+
+        // HTTP timeout (seconds) for the announcements request.
+        'timeout' => (int) env('NOTIFIER_ANNOUNCEMENTS_TIMEOUT', 5),
+    ],
 ];

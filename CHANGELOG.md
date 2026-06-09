@@ -5,6 +5,21 @@ All notable changes to `devuni/notifier-package` will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.0] - 2026-06-09
+
+### Added
+
+-   **Announcements (opt-in).** The package can now pull this site's maintenance/announcement notices from the central server and expose them for rendering in your own dashboard — the first step toward two-way communication between the agent and the platform.
+    -   **Per-repository, secure by design.** Requests reuse the existing `NOTIFIER_URL` and `X-Notifier-Token`: `GET {NOTIFIER_URL}/announcements` (e.g. `.../api/v1/repositories/52740614/announcements`). The server returns only this site's announcements, so no other repositories are ever disclosed to the client. Redirect-following is disabled on the token-bearing request.
+    -   **`AnnouncementsService::activeAnnouncements()`** — fetches and returns this site's active announcements. Always returns an array and never throws, so a down/slow announcement server can never break the consumer's dashboard.
+    -   **`<x-notifier-announcements-notice />` Blade component** — drop it into your own dashboard to render the active announcements as notice blocks (unstyled; target the `.notifier-announcement` / `.notifier-announcement--{severity}` classes). Views are publishable via `--tag=notifier-views`.
+    -   **Caching** — successful responses are cached (`NOTIFIER_ANNOUNCEMENTS_CACHE_TTL`, default 900 s) and failures are briefly negative-cached (`NOTIFIER_ANNOUNCEMENTS_FAILURE_CACHE_TTL`, default 60 s), so the dashboard never makes a blocking HTTP request on every page load.
+    -   New config: `notifier.features.announcements` (toggle, env `NOTIFIER_ANNOUNCEMENTS_ENABLED`, default `false`) and the `notifier.announcements.*` block (`cache_ttl`, `failure_cache_ttl`, `timeout`). Backward-compatible defaults via `mergeConfigFrom` — no need to re-publish `config/notifier.php`.
+
+### Notes
+
+-   The feature is **off by default** and a backup-only install carries no extra behavior or HTTP traffic. It pairs with a matching `GET /api/v1/repositories/{id}/announcements` endpoint on `notifier-devuni-cz` (server side, separate).
+
 ## [2.7.1] - 2026-06-09
 
 ### Security

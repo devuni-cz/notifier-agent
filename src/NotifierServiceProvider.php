@@ -10,6 +10,7 @@ use Devuni\Notifier\Commands\NotifierInstallCommand;
 use Devuni\Notifier\Commands\NotifierStorageBackupCommand;
 use Devuni\Notifier\Interfaces\DatabaseDumperInterface;
 use Devuni\Notifier\Interfaces\ZipCreatorInterface;
+use Devuni\Notifier\Services\AnnouncementsService;
 use Devuni\Notifier\Services\ChunkedUploadService;
 use Devuni\Notifier\Services\Database\MysqlDumper;
 use Devuni\Notifier\Services\Database\PostgresDumper;
@@ -19,6 +20,7 @@ use Devuni\Notifier\Services\NotifierLoggerService;
 use Devuni\Notifier\Services\NotifierStorageService;
 use Devuni\Notifier\Services\Zip\CliZipCreator;
 use Devuni\Notifier\Services\Zip\PhpZipCreator;
+use Devuni\Notifier\View\Components\AnnouncementsNotice;
 use Illuminate\Support\ServiceProvider;
 use RuntimeException;
 
@@ -37,6 +39,7 @@ final class NotifierServiceProvider extends ServiceProvider
         $this->app->singleton(ChunkedUploadService::class);
         $this->app->singleton(NotifierDatabaseService::class);
         $this->app->singleton(NotifierStorageService::class);
+        $this->app->singleton(AnnouncementsService::class);
 
         // Bind lazily: the actual dumper is resolved on first use, so unsupported
         // drivers (e.g. sqlite in test envs) don't blow up at container resolution
@@ -78,6 +81,10 @@ final class NotifierServiceProvider extends ServiceProvider
                 self::basePath('/config/notifier.php') => config_path('notifier.php'),
             ], 'notifier-config');
 
+            $this->publishes([
+                self::basePath('/resources/views') => resource_path('views/vendor/notifier'),
+            ], 'notifier-views');
+
             $this->commands([
                 NotifierCheckCommand::class,
                 NotifierDatabaseBackupCommand::class,
@@ -85,6 +92,14 @@ final class NotifierServiceProvider extends ServiceProvider
                 NotifierStorageBackupCommand::class,
             ]);
         }
+
+        // The <x-notifier-announcements-notice /> component is always available; the
+        // AnnouncementsService itself gates behavior on the `features.announcements` flag, so a
+        // disabled install renders nothing and makes no HTTP call.
+        $this->loadViewsFrom(self::basePath('/resources/views'), 'notifier');
+        $this->loadViewComponentsAs('notifier', [
+            AnnouncementsNotice::class,
+        ]);
 
         if (config('notifier.routes_enabled', true)) {
             $this->loadRoutesFrom(self::basePath('/routes/web.php'));

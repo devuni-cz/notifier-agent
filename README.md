@@ -68,6 +68,16 @@ curl -X POST https://your-app.com/api/notifier/backup \
 
 On failure the response returns an opaque `error_id` (UUID) - the full detail (stack trace, `mysqldump`/7z stderr) stays in your `backup` log channel. Grep logs for the UUID to correlate.
 
+### Announcements (opt-in)
+
+Pull this site's maintenance/announcement notices from the central server and render them in your own dashboard. Off by default - enable with `NOTIFIER_ANNOUNCEMENTS_ENABLED=true`, then drop the component anywhere:
+
+```blade
+<x-notifier-announcements-notice />
+```
+
+Requests are **per-repository** and reuse your existing `NOTIFIER_URL` + `X-Notifier-Token` (`GET {NOTIFIER_URL}/announcements`), so the server returns only this site's announcements - no other repositories are disclosed. Responses are cached (`NOTIFIER_ANNOUNCEMENTS_CACHE_TTL`, default 900 s) so the dashboard never blocks on a live request, and any fetch failure renders nothing rather than breaking your dashboard. Customize the markup with `vendor:publish --tag="notifier-views"`, or render it yourself from `app(\Devuni\Notifier\Services\AnnouncementsService::class)->activeAnnouncements()`.
+
 ## Configure
 
 Minimum `.env`:
