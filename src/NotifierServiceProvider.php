@@ -22,6 +22,7 @@ use Devuni\Notifier\Services\NotifierStorageService;
 use Devuni\Notifier\Services\Zip\CliZipCreator;
 use Devuni\Notifier\Services\Zip\PhpZipCreator;
 use Devuni\Notifier\View\Components\AnnouncementsNotice;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use RuntimeException;
 
@@ -168,7 +169,7 @@ final class NotifierServiceProvider extends ServiceProvider
 
         \Filament\Support\Facades\FilamentView::registerRenderHook(
             (string) config('notifier.announcements.filament.render_hook', 'panels::content.start'),
-            fn (): string => view('notifier::filament.announcements', [
+            fn (): string => View::make('notifier::filament.announcements', [
                 'announcements' => $this->app->make(AnnouncementsService::class)->activeAnnouncements(),
             ])->render(),
         );
