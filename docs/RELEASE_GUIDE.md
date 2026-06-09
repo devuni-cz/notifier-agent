@@ -1,6 +1,6 @@
 # Release Management Guide
 
-This guide explains how to manage versions and releases for the Devuni Notifier Package.
+This guide explains how to manage versions and releases for the Devuni Notifier Agent.
 
 ## Version Strategy
 
@@ -96,7 +96,7 @@ Before creating a release:
 1. **Register on Packagist**:
 
     - Go to [packagist.org](https://packagist.org)
-    - Submit your package: `https://github.com/devuni-cz/notifier-package`
+    - Submit your package: `https://github.com/devuni-cz/notifier-agent`
 
 2. **Set up Auto-Update**:
     - In GitHub: Settings → Webhooks
@@ -106,7 +106,7 @@ Before creating a release:
 ### Package Installation
 
 ```bash
-composer require devuni/notifier-package
+composer require devuni/notifier-agent
 ```
 
 ## Release Types

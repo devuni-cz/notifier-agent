@@ -1,15 +1,19 @@
 {
-    "name": "devuni/notifier-package",
-    "description": "Laravel package for automated backups and notifications.",
+    "name": "devuni/notifier-agent",
+    "description": "Laravel agent for the Devuni Notifier platform — encrypted backups and announcements.",
     "keywords": [
         "laravel",
         "notifier",
+        "agent",
         "backup",
-        "notifications",
+        "announcements",
         "devuni"
     ],
-    "homepage": "https://github.com/devuni-cz/notifier-package",
+    "homepage": "https://github.com/devuni-cz/notifier-agent",
     "license": "MIT",
+    "replace": {
+        "devuni/notifier-package": "self.version"
+    },
     "require": {
         "php": "^8.4",
         "guzzlehttp/guzzle": "^7.11.1",

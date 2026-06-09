@@ -1,7 +1,7 @@
-# Devuni Notifier Package
+# Devuni Notifier Agent
 
-[![Latest Version on Packagist](https://img.shields.io/packagist/v/devuni/notifier-package.svg?style=flat-square)](https://packagist.org/packages/devuni/notifier-package)
-[![Tests](https://github.com/devuni-cz/notifier-package/actions/workflows/ci.yml/badge.svg)](https://github.com/devuni-cz/notifier-package/actions/workflows/ci.yml)
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/devuni/notifier-agent.svg?style=flat-square)](https://packagist.org/packages/devuni/notifier-agent)
+[![Tests](https://github.com/devuni-cz/notifier-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/devuni-cz/notifier-agent/actions/workflows/ci.yml)
 [![PHP 8.4](https://img.shields.io/badge/PHP-8.4-777BB4?style=flat-square&logo=php&logoColor=white)](https://www.php.net)
 [![Laravel 12](https://img.shields.io/badge/Laravel-12-FF2D20?style=flat-square&logo=laravel&logoColor=white)](https://laravel.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE.md)
@@ -28,7 +28,7 @@ Encrypted database & storage backups for Laravel apps, shipped to the [Devuni No
 ## Install
 
 ```bash
-composer require devuni/notifier-package
+composer require devuni/notifier-agent
 php artisan vendor:publish --tag="notifier-config"
 php artisan notifier:install   # interactive .env wizard
 php artisan notifier:check     # verify setup (env, DB, 7z, mysqldump, URL)

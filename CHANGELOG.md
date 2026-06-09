@@ -1,9 +1,21 @@
 # Changelog
 
-All notable changes to `devuni/notifier-package` will be documented in this file.
+All notable changes to `devuni/notifier-agent` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [3.0.0] - 2026-06-09
+
+### Changed
+
+-   **Renamed `devuni/notifier-package` → `devuni/notifier-agent`** and moved development to a new repository: <https://github.com/devuni-cz/notifier-agent>. The package has grown from a one-way backup shipper into a two-way client of the Notifier control plane (backups + announcements, with more to come), so the name now reflects what it is — the **agent** installed in each app. The PHP namespace stays `Devuni\Notifier\`, so there are no code changes in your app beyond the Composer name.
+    -   **Migrate:** `composer remove devuni/notifier-package && composer require devuni/notifier-agent`. A `"replace"` entry keeps the old name resolving during the transition, so a mixed dependency tree won't conflict.
+    -   The old `devuni/notifier-package` package is **abandoned** (pointing here) and frozen at `2.8.0`; all further development happens here.
+
+### Notes
+
+-   **No functional changes vs `2.8.0`** — this release is the rename and new home only. Everything from `2.8.0` (announcements, Filament auto-injection, the unified `NotifierApiClient`) ships unchanged.
 
 ## [2.8.0] - 2026-06-09
 
@@ -524,7 +536,8 @@ NOTIFIER_LOGGING_CHANNEL=backup
 -   GitHub Actions CI/CD
 -   Documentation and examples
 
-[Unreleased]: https://github.com/devuni-cz/notifier-package/compare/v2.7.0...HEAD
+[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/devuni-cz/notifier-agent/releases/tag/v3.0.0
 [2.7.0]: https://github.com/devuni-cz/notifier-package/compare/v2.6.4...v2.7.0
 [2.6.3]: https://github.com/devuni-cz/notifier-package/compare/v2.6.2...v2.6.3
 [2.6.2]: https://github.com/devuni-cz/notifier-package/compare/v2.6.1...v2.6.2

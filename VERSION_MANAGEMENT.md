@@ -43,7 +43,7 @@ git push origin v1.0.0
 ## 📦 Packagist Setup
 
 1. Register at [packagist.org](https://packagist.org)
-2. Submit: `https://github.com/devuni-cz/notifier-package`
+2. Submit: `https://github.com/devuni-cz/notifier-agent`
 3. Set up GitHub webhook for auto-updates
 
 ## 🛠️ Available Commands

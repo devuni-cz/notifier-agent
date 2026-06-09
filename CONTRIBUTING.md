@@ -1,14 +1,14 @@
-# Contributing to Devuni Notifier Package
+# Contributing to Devuni Notifier Agent
 
-Thank you for considering contributing to the Devuni Notifier Package! We welcome contributions from everyone.
+Thank you for considering contributing to the Devuni Notifier Agent! We welcome contributions from everyone.
 
 ## Development Process
 
 ### 1. Fork and Clone
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/notifier-package.git
-cd notifier-package
+git clone https://github.com/YOUR_USERNAME/notifier-agent.git
+cd notifier-agent
 ```
 
 ### 2. Install Dependencies

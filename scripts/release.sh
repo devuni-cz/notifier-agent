@@ -5,7 +5,7 @@
 
 set -e
 
-echo "🚀 Setting up initial release for Devuni Notifier Package"
+echo "🚀 Setting up initial release for Devuni Notifier Agent"
 
 # Check if we're in a git repository
 if ! git rev-parse --git-dir > /dev/null 2>&1; then
@@ -118,7 +118,7 @@ echo "     - Update Packagist (if configured)"
 echo ""
 echo "🌐 Register your package on Packagist:"
 echo "  1. Go to https://packagist.org"
-echo "  2. Submit: https://github.com/devuni-cz/notifier-package"
+echo "  2. Submit: https://github.com/devuni-cz/notifier-agent"
 echo "  3. Set up webhook for auto-updates"
 echo ""
 
@@ -127,7 +127,7 @@ echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     git push origin "$TAG"
     echo "🎉 Release $TAG pushed successfully!"
-    echo "🔗 Check your GitHub Actions: https://github.com/devuni-cz/notifier-package/actions"
+    echo "🔗 Check your GitHub Actions: https://github.com/devuni-cz/notifier-agent/actions"
 else
     echo "📝 Remember to push the tag manually: git push origin $TAG"
 fi

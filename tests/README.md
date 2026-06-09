@@ -1,6 +1,6 @@
-# Notifier Package Test Suite
+# Notifier Agent Test Suite
 
-This comprehensive test suite covers all aspects of the Devuni Notifier Package using PestPHP 4.0.4.
+This comprehensive test suite covers all aspects of the Devuni Notifier Agent using PestPHP 4.0.4.
 
 ## Test Structure
 
@@ -151,4 +151,4 @@ vendor/bin/pest tests/Feature/NotifierPackageTest.php
 - **Feature Tests**: 15+ workflow tests
 - **Regression Tests**: Edge cases and error conditions
 
-This test suite provides comprehensive coverage of the Notifier Package functionality while acknowledging the complexity of testing certain external dependencies and static methods in a Laravel package context.
+This test suite provides comprehensive coverage of the Notifier Agent functionality while acknowledging the complexity of testing certain external dependencies and static methods in a Laravel package context.

@@ -60,7 +60,7 @@ trait DisplayHelperTrait
     {
         $version = $this->getCurrentVersion();
 
-        note(" devuni/notifier-package {$this->displayBadge(" {$version} ")}");
+        note(" devuni/notifier-agent {$this->displayBadge(" {$version} ")}");
     }
 
     protected function displayOutro(string $text, string $link = '', int $terminalWidth = 80): void
@@ -96,7 +96,7 @@ trait DisplayHelperTrait
     private function getCurrentVersion(): string
     {
         try {
-            return InstalledVersions::getPrettyVersion('devuni/notifier-package') ?? 'custom';
+            return InstalledVersions::getPrettyVersion('devuni/notifier-agent') ?? 'custom';
         } catch (OutOfBoundsException $e) {
             return 'unknown';
         }
