@@ -11,7 +11,7 @@ use Devuni\Notifier\Services\NotifierConfigService;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
 
-describe('Notifier Package Basic Integration Tests', function () {
+describe('Notifier Agent Basic Integration Tests', function () {
     describe('Service Provider', function () {
         it('registers the service provider', function () {
             $providers = $this->app->getLoadedProviders();
@@ -202,7 +202,7 @@ describe('Notifier Package Basic Integration Tests', function () {
 
         it('has proper composer configuration', function () {
             $composer = json_decode(file_get_contents(__DIR__.'/../../composer.json'), true);
-            expect($composer['name'])->toBe('devuni/notifier-package');
+            expect($composer['name'])->toBe('devuni/notifier-agent');
             expect($composer['extra']['laravel']['providers'])->toContain(NotifierServiceProvider::class);
         });
     });
