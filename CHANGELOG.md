@@ -5,7 +5,32 @@ All notable changes to `devuni/notifier-package` will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.7.0] - 2026-05-09
+## [2.7.1] - 2026-06-09
+
+### Security
+
+-   **`ChunkedUploadService`**: redirect-following is now disabled (`allow_redirects => false`) on the upload **init**, **chunk**, and **finalize** requests as well — previously only the status-poll GET was hardened. Guzzle re-sends custom headers across redirects (it strips only `Authorization`/`Cookie`), so a `30x` from the backup origin could otherwise relay the `X-Notifier-Token` secret to an arbitrary (even cleartext-`http`) host. The token now never leaves the configured HTTPS origin on any request.
+-   **`ChunkedUploadService`**: the server-supplied `failure_reason` is sanitized (control characters stripped, length capped at 500) before being interpolated into the thrown exception and logged, preventing log injection from a misbehaving server.
+-   **`notifier:check`**: the `NOTIFIER_BACKUP_CODE` and `NOTIFIER_BACKUP_PASSWORD` secrets are now displayed as presence + length only (`set (N chars)`) instead of revealing their first and last three characters, so they cannot leak into terminal scrollback or CI logs.
+
+### Fixed
+
+-   **`PostgresDumper`**: fixed an undefined `$binary` variable on the dump-failure log path (surfaced by static analysis).
+-   **`NotifierDatabaseService`**: the "creating backup file" log entry now records the concrete dumper (`MysqlDumper` / `PostgresDumper`) instead of always reporting the `LazyDatabaseDumper` proxy.
+-   **CHANGELOG**: removed a spurious `Contracts\DatabaseDumper → DatabaseDumperInterface` rename entry from the 2.7.0 notes (that interface is new, not a rename) and corrected the 2.7.0 release date.
+
+### Changed
+
+-   **`MysqlDumper` / `PostgresDumper`**: command construction was extracted into a `buildCommand()` method. Behavior is unchanged — the password is still passed only via the `MYSQL_PWD` / `PGPASSWORD` env var and never on the command line — but the generated argv is now unit-testable.
+
+### Tests
+
+-   Added direct unit coverage for `MysqlDumper`, `PostgresDumper` (argv, excluded-table qualification, and binary resolution including `ysql_dump`/`pg_dump` preference and config overrides) and `LazyDatabaseDumper` (single resolution + proxying).
+-   Added driver-selection tests for `NotifierServiceProvider::resolveDumper` (mysql/mariadb/pgsql, default-connection fallback, and the unsupported-driver / missing-connection error branches).
+-   Added `ChunkedUploadService::waitForCompletion` tests (completed / failed / non-terminal polling / timeout / repeated polling errors / failure-reason sanitization).
+-   Hardened the `notifier:check` database-dump-tool and masked-value checks, and rewrote the stale `NotifierDatabaseService` test (which still asserted the removed, insecure `--password=` argv pattern) into real behavior tests.
+
+## [2.7.0] - 2026-06-09
 
 ### Added
 
@@ -25,7 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -   `notifier:check` replaces the hard-coded "mysqldump availability" check with a driver-aware "database dump tool" check that validates the right binary for your configured connection.
 -   **BREAKING - naming convention for interfaces, traits, and enums.** All package interfaces and traits now carry an explicit type suffix and live in type-named namespaces (`Interfaces\`, `Traits\`) instead of the Laravel-style `Contracts\` / `Concerns\`, enums consistently use the `Enum` suffix, and the `Support\` utility namespace was folded into `Services\`:
     -   `Devuni\Notifier\Contracts\ZipCreator` → `Devuni\Notifier\Interfaces\ZipCreatorInterface`
-    -   `Devuni\Notifier\Contracts\DatabaseDumper` → `Devuni\Notifier\Interfaces\DatabaseDumperInterface`
     -   `Devuni\Notifier\Concerns\ChecksNotifierEnvironment` → `Devuni\Notifier\Traits\ChecksNotifierEnvironmentTrait`
     -   `Devuni\Notifier\Concerns\DisplayHelper` → `Devuni\Notifier\Traits\DisplayHelperTrait`
     -   `Devuni\Notifier\Enums\Theme` → `Devuni\Notifier\Enums\ThemeEnum` (the `Enums\` namespace is unchanged; only the missing `Enum` suffix was added, matching the existing `BackupTypeEnum`)

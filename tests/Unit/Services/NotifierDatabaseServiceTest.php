@@ -2,207 +2,162 @@
 
 declare(strict_types=1);
 
-use Carbon\Carbon;
+use Devuni\Notifier\Interfaces\DatabaseDumperInterface;
+use Devuni\Notifier\Interfaces\ZipCreatorInterface;
+use Devuni\Notifier\Services\ChunkedUploadService;
+use Devuni\Notifier\Services\Database\LazyDatabaseDumper;
 use Devuni\Notifier\Services\NotifierDatabaseService;
+use Devuni\Notifier\Services\NotifierLoggerService;
 
-describe('NotifierDatabaseService', function () {
-    beforeEach(function () {
-        // Setup test configuration
-        config([
-            'database.connections.mysql' => [
-                'username' => 'test_user',
-                'password' => 'test_password',
-                'port' => '3306',
-                'host' => 'localhost',
-                'database' => 'test_database',
-            ],
-            'notifier.backup_url' => 'https://test.com/backup',
-            'notifier.backup_code' => 'test-code',
-        ]);
+/**
+ * A configurable in-memory dumper. `content` controls what the dump writes:
+ *   - a non-empty string -> a valid dump file
+ *   - an empty string    -> an empty dump file (triggers the "is empty" guard)
+ *   - null               -> no file at all  (triggers the "was not created" guard)
+ */
+function fakeDatabaseDumper(?string $content = 'SQL DUMP CONTENT'): DatabaseDumperInterface
+{
+    return new class($content) implements DatabaseDumperInterface
+    {
+        public string $dumpedTo = '';
+
+        public function __construct(public ?string $content) {}
+
+        public static function isAvailable(): bool
+        {
+            return true;
+        }
+
+        public function dump(string $outputPath): void
+        {
+            $this->dumpedTo = $outputPath;
+
+            if ($this->content !== null) {
+                file_put_contents($outputPath, $this->content);
+            }
+        }
+
+        public function describe(): string
+        {
+            return 'fake-dumper 1.0';
+        }
+    };
+}
+
+/**
+ * A ZIP creator that records what it was asked to archive and writes a stub archive.
+ */
+function fakeZipCreator(): ZipCreatorInterface
+{
+    return new class implements ZipCreatorInterface
+    {
+        /** @var array{source: string, zip: string, password: string}|null */
+        public ?array $captured = null;
+
+        public static function isAvailable(): bool
+        {
+            return true;
+        }
+
+        public function create(string $sourcePath, string $zipPath, string $password, array $excludedFiles = []): int
+        {
+            $this->captured = ['source' => $sourcePath, 'zip' => $zipPath, 'password' => $password];
+            file_put_contents($zipPath, 'ZIP-ARCHIVE');
+
+            return 1;
+        }
+    };
+}
+
+function makeNotifierDatabaseService(
+    DatabaseDumperInterface $dumper,
+    ZipCreatorInterface $zip,
+): NotifierDatabaseService {
+    return new NotifierDatabaseService(
+        new ChunkedUploadService(new NotifierLoggerService()),
+        $zip,
+        $dumper,
+        new NotifierLoggerService(),
+    );
+}
+
+describe('NotifierDatabaseService::createDatabaseBackup', function () {
+    it('returns a plain .sql file when no zip password is configured', function () {
+        config(['notifier.backup_zip_password' => null]);
+
+        $dumper = fakeDatabaseDumper('SELECT 1;');
+        $zip = fakeZipCreator();
+
+        $path = makeNotifierDatabaseService($dumper, $zip)->createDatabaseBackup();
+
+        try {
+            expect($path)->toEndWith('.sql');
+            expect(file_exists($path))->toBeTrue();
+            expect($dumper->dumpedTo)->toBe($path);
+            // ZIP must NOT be invoked when there is no password.
+            expect($zip->captured)->toBeNull();
+        } finally {
+            @unlink($path);
+        }
     });
 
-    describe('service structure and configuration', function () {
-        it('has the correct class structure', function () {
-            expect(class_exists(NotifierDatabaseService::class))->toBeTrue();
-            expect(method_exists(NotifierDatabaseService::class, 'createDatabaseBackup'))->toBeTrue();
-            expect(method_exists(NotifierDatabaseService::class, 'sendDatabaseBackup'))->toBeTrue();
-        });
+    it('encrypts the dump into a password-protected ZIP when a password is set', function () {
+        config(['notifier.backup_zip_password' => 'super-secret']);
 
-        it('createDatabaseBackup method has correct signature', function () {
-            $reflection = new ReflectionMethod(NotifierDatabaseService::class, 'createDatabaseBackup');
+        $dumper = fakeDatabaseDumper('SELECT 1;');
+        $zip = fakeZipCreator();
 
-            expect($reflection->isStatic())->toBeFalse();
-            expect($reflection->isPublic())->toBeTrue();
-            expect($reflection->getReturnType()?->getName())->toBe('string');
-            expect($reflection->getNumberOfParameters())->toBe(0);
-        });
+        $path = makeNotifierDatabaseService($dumper, $zip)->createDatabaseBackup();
 
-        it('sendDatabaseBackup method has correct signature', function () {
-            $reflection = new ReflectionMethod(NotifierDatabaseService::class, 'sendDatabaseBackup');
-
-            expect($reflection->isStatic())->toBeFalse();
-            expect($reflection->isPublic())->toBeTrue();
-            expect($reflection->getNumberOfParameters())->toBe(1);
-
-            $parameters = $reflection->getParameters();
-            expect($parameters[0]->getName())->toBe('path');
-            expect($parameters[0]->getType()?->getName())->toBe('string');
-        });
+        try {
+            expect($path)->toEndWith('.zip');
+            expect($zip->captured)->not->toBeNull();
+            expect($zip->captured['password'])->toBe('super-secret');
+            expect($zip->captured['source'])->toEndWith('.sql');
+            // The intermediate .sql dump is deleted once it has been encrypted.
+            expect(file_exists($zip->captured['source']))->toBeFalse();
+        } finally {
+            @unlink($path);
+        }
     });
 
-    describe('backup path generation logic', function () {
-        it('generates expected backup filename format', function () {
-            // We can test the expected path format without actually creating the backup
-            $expectedDate = Carbon::now()->format('Y-m-d');
-            $expectedFilename = "backup-{$expectedDate}.sql";
-            $expectedPath = storage_path('app/private').'/'.$expectedFilename;
+    it('throws when the dump command produced no file', function () {
+        config(['notifier.backup_zip_password' => null]);
 
-            // Test that our expected path format is correct
-            expect($expectedPath)->toContain('backup-');
-            expect($expectedPath)->toContain('.sql');
-            expect($expectedPath)->toContain(storage_path('app/private'));
-            expect($expectedPath)->toContain($expectedDate);
-        });
+        $service = makeNotifierDatabaseService(fakeDatabaseDumper(null), fakeZipCreator());
 
-        it('uses correct storage directory', function () {
-            $expectedDirectory = storage_path('app/private');
-
-            expect($expectedDirectory)->toContain('app/private');
-            expect(is_string($expectedDirectory))->toBeTrue();
-        });
+        expect(fn () => $service->createDatabaseBackup())
+            ->toThrow(RuntimeException::class, 'was not created');
     });
 
-    describe('database configuration usage', function () {
-        it('can access required database configuration', function () {
-            $config = config('database.connections.mysql');
+    it('throws when the dump file is empty', function () {
+        config(['notifier.backup_zip_password' => null]);
 
-            expect($config)->toBeArray();
-            expect($config)->toHaveKey('username');
-            expect($config)->toHaveKey('password');
-            expect($config)->toHaveKey('port');
-            expect($config)->toHaveKey('host');
-            expect($config)->toHaveKey('database');
+        $service = makeNotifierDatabaseService(fakeDatabaseDumper(''), fakeZipCreator());
 
-            expect($config['username'])->toBe('test_user');
-            expect($config['password'])->toBe('test_password');
-            expect($config['port'])->toBe('3306');
-            expect($config['host'])->toBe('localhost');
-            expect($config['database'])->toBe('test_database');
-        });
-
-        it('generates correct mysqldump command structure', function () {
-            $config = config('database.connections.mysql');
-            $testPath = '/tmp/test-backup.sql';
-
-            // Expected command structure (what the service should generate)
-            $expectedCommand = [
-                'mysqldump',
-                '--no-tablespaces',
-                '--single-transaction',
-                '--quick',
-                '--user='.$config['username'],
-                '--password='.$config['password'],
-                '--port='.$config['port'],
-                '--host='.$config['host'],
-                '--result-file='.$testPath,
-                $config['database'],
-            ];
-
-            expect($expectedCommand[0])->toBe('mysqldump');
-            expect($expectedCommand[1])->toBe('--no-tablespaces');
-            expect($expectedCommand[2])->toBe('--single-transaction');
-            expect($expectedCommand[3])->toBe('--quick');
-            expect($expectedCommand[4])->toBe('--user=test_user');
-            expect($expectedCommand[5])->toBe('--password=test_password');
-            expect($expectedCommand[6])->toBe('--port=3306');
-            expect($expectedCommand[7])->toBe('--host=localhost');
-            expect($expectedCommand[8])->toBe('--result-file=/tmp/test-backup.sql');
-            expect($expectedCommand[9])->toBe('test_database');
-        });
+        expect(fn () => $service->createDatabaseBackup())
+            ->toThrow(RuntimeException::class, 'is empty');
     });
 
-    describe('backup upload configuration', function () {
-        it('can access required backup configuration', function () {
-            expect(config('notifier.backup_url'))->toBe('https://test.com/backup');
-            expect(config('notifier.backup_code'))->toBe('test-code');
+    it('unwraps a LazyDatabaseDumper and resolves it exactly once across logging + dump', function () {
+        config(['notifier.backup_zip_password' => null]);
+
+        $inner = fakeDatabaseDumper('SELECT 1;');
+        $resolverCalls = 0;
+        $lazy = new LazyDatabaseDumper(function () use (&$resolverCalls, $inner): DatabaseDumperInterface {
+            $resolverCalls++;
+
+            return $inner;
         });
 
-        it('generates correct multipart data structure', function () {
-            $testPath = '/tmp/test-backup.sql';
+        $path = makeNotifierDatabaseService($lazy, fakeZipCreator())->createDatabaseBackup();
 
-            // Expected multipart structure (what the service should send)
-            $expectedMultipart = [
-                [
-                    'name' => 'backup_file',
-                    'contents' => 'file_resource_placeholder',
-                    'filename' => 'test-backup.sql',
-                ],
-                [
-                    'name' => 'backup_type',
-                    'contents' => 'backup_database',
-                ],
-                [
-                    'name' => 'password',
-                    'contents' => config('notifier.backup_code'),
-                ],
-            ];
-
-            expect($expectedMultipart)->toHaveCount(3);
-            expect($expectedMultipart[0]['name'])->toBe('backup_file');
-            expect($expectedMultipart[0]['filename'])->toBe('test-backup.sql');
-            expect($expectedMultipart[1]['name'])->toBe('backup_type');
-            expect($expectedMultipart[1]['contents'])->toBe('backup_database');
-            expect($expectedMultipart[2]['name'])->toBe('password');
-            expect($expectedMultipart[2]['contents'])->toBe('test-code');
-        });
-
-        it('uses correct HTTP endpoint for upload', function () {
-            $backupUrl = config('notifier.backup_url');
-
-            expect($backupUrl)->toBeString();
-            expect($backupUrl)->toContain('https://');
-            expect($backupUrl)->toBe('https://test.com/backup');
-        });
-    });
-
-    describe('error handling expectations', function () {
-        it('should handle missing configuration gracefully', function () {
-            // Test with missing configuration
-            config(['notifier.backup_url' => '']);
-
-            expect(config('notifier.backup_url'))->toBe('');
-            expect(config('notifier.backup_code'))->toBe('test-code');
-        });
-
-        it('should handle invalid file paths', function () {
-            $invalidPath = '/nonexistent/path/backup.sql';
-
-            expect(file_exists($invalidPath))->toBeFalse();
-            expect(dirname($invalidPath))->toBe('/nonexistent/path');
-        });
-    });
-
-    describe('file operations expectations', function () {
-        it('works with valid file paths', function () {
-            $validPath = storage_path('app/private/test-backup.sql');
-
-            expect(dirname($validPath))->toBe(storage_path('app/private'));
-            expect(basename($validPath))->toBe('test-backup.sql');
-            expect(pathinfo($validPath, PATHINFO_EXTENSION))->toBe('sql');
-        });
-
-        it('generates unique filenames by date', function () {
-            $today = Carbon::now()->format('Y-m-d');
-            $filename1 = "backup-{$today}.sql";
-            $filename2 = "backup-{$today}.sql";
-
-            // Same day should generate same filename (overwrite behavior)
-            expect($filename1)->toBe($filename2);
-
-            // Different day would generate different filename
-            $tomorrow = Carbon::now()->addDay()->format('Y-m-d');
-            $filename3 = "backup-{$tomorrow}.sql";
-            expect($filename1)->not->toBe($filename3);
-        });
+        try {
+            // The diagnostic-log unwrap and the actual dump() share a single resolution.
+            expect($resolverCalls)->toBe(1);
+            expect(file_exists($path))->toBeTrue();
+        } finally {
+            @unlink($path);
+        }
     });
 });

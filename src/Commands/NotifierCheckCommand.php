@@ -95,7 +95,9 @@ final class NotifierCheckCommand extends Command
     }
 
     /**
-     * Mask a value for display (show first 3 and last 3 characters).
+     * Mask a secret for display. We only report presence + length — never any
+     * plaintext characters — so the shared secret can't leak into terminal
+     * scrollback or CI logs from a diagnostic command.
      */
     private function maskValue(?string $value): string
     {
@@ -103,12 +105,7 @@ final class NotifierCheckCommand extends Command
             return '<fg=red>(empty)</>';
         }
 
-        $length = mb_strlen($value);
-        if ($length <= 6) {
-            return str_repeat('*', $length);
-        }
-
-        return mb_substr($value, 0, 3).str_repeat('*', $length - 6).mb_substr($value, -3);
+        return '<fg=green>set</> <fg=gray>('.mb_strlen($value).' chars)</>';
     }
 
     /**

@@ -120,6 +120,10 @@ final class ChunkedUploadService
         string $checksum,
     ): string {
         $response = Http::timeout(30)
+            // Never follow a redirect on a token-bearing request: Guzzle re-sends
+            // custom headers (it only strips Authorization/Cookie cross-origin), so a
+            // 30x from the backup origin would relay X-Notifier-Token to the target.
+            ->withOptions(['allow_redirects' => false])
             ->withHeaders(['X-Notifier-Token' => $token])
             ->post(mb_rtrim($baseUrl, '/').'/uploads/init', [
                 'backup_type' => $backupType,
@@ -171,6 +175,7 @@ final class ChunkedUploadService
                 }
 
                 $response = Http::timeout(120)
+                    ->withOptions(['allow_redirects' => false])
                     ->withHeaders([
                         'X-Notifier-Token' => $token,
                         'X-Chunk-Checksum' => $chunkChecksum,
@@ -217,6 +222,7 @@ final class ChunkedUploadService
     private function finalizeUpload(string $baseUrl, string $token, string $uploadId): void
     {
         $response = Http::timeout(60)
+            ->withOptions(['allow_redirects' => false])
             ->withHeaders(['X-Notifier-Token' => $token])
             ->post(mb_rtrim($baseUrl, '/').'/uploads/'.$uploadId.'/finalize');
 
@@ -312,7 +318,10 @@ final class ChunkedUploadService
                 return;
             }
 
-            $reason = $response->json('failure_reason') ?: 'unknown';
+            // failure_reason is server-supplied and ends up in logs; strip control
+            // characters and cap its length to avoid log injection / unbounded growth.
+            $reason = (string) ($response->json('failure_reason') ?: 'unknown');
+            $reason = mb_substr((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $reason), 0, 500);
             throw new RuntimeException("Backup upload failed on server: {$reason}");
         }
 

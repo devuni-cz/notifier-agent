@@ -43,6 +43,33 @@ final class MysqlDumper implements DatabaseDumperInterface
             throw new RuntimeException("Database connection '{$this->connection}' has no database name configured.");
         }
 
+        $command = $this->buildCommand($config, (string) $database, $outputPath);
+
+        $process = new Process($command);
+        $process->setTimeout(600);
+        // Password via env var (not argv) to keep it out of /proc/*/cmdline and `ps` output.
+        $process->setEnv(['MYSQL_PWD' => (string) ($config['password'] ?? '')]);
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            $logger->error('❌ mysqldump failed', [
+                'exitCode' => $process->getExitCode(),
+                'error' => $process->getErrorOutput(),
+            ]);
+
+            throw new RuntimeException('Database backup failed: '.$process->getErrorOutput());
+        }
+    }
+
+    /**
+     * Build the mysqldump argv. The password is intentionally absent here — it is
+     * passed via the MYSQL_PWD env var in dump() so it never reaches the process table.
+     *
+     * @param  array<string, mixed>  $config
+     * @return list<string>
+     */
+    public function buildCommand(array $config, string $database, string $outputPath): array
+    {
         $command = [
             'mysqldump',
             '--no-tablespaces',
@@ -63,20 +90,7 @@ final class MysqlDumper implements DatabaseDumperInterface
         $command[] = '--result-file='.$outputPath;
         $command[] = $database;
 
-        $process = new Process($command);
-        $process->setTimeout(600);
-        // Password via env var (not argv) to keep it out of /proc/*/cmdline and `ps` output.
-        $process->setEnv(['MYSQL_PWD' => (string) ($config['password'] ?? '')]);
-        $process->run();
-
-        if (! $process->isSuccessful()) {
-            $logger->error('❌ mysqldump failed', [
-                'exitCode' => $process->getExitCode(),
-                'error' => $process->getErrorOutput(),
-            ]);
-
-            throw new RuntimeException('Database backup failed: '.$process->getErrorOutput());
-        }
+        return $command;
     }
 
     public function describe(): string

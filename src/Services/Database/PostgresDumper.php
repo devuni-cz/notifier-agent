@@ -45,6 +45,34 @@ final class PostgresDumper implements DatabaseDumperInterface
         }
 
         $binary = $this->resolveBinary();
+        $command = $this->buildCommand($binary, $config, (string) $database, $outputPath);
+
+        $process = new Process($command);
+        $process->setTimeout(600);
+        // Password via PGPASSWORD env var (not argv) - same rationale as MYSQL_PWD: keeps
+        // it out of the process table on shared hosts.
+        $process->setEnv(['PGPASSWORD' => (string) ($config['password'] ?? '')]);
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            $logger->error('❌ '.$binary.' failed', [
+                'exitCode' => $process->getExitCode(),
+                'error' => $process->getErrorOutput(),
+            ]);
+
+            throw new RuntimeException('Database backup failed: '.$process->getErrorOutput());
+        }
+    }
+
+    /**
+     * Build the pg_dump/ysql_dump argv. The password is intentionally absent here — it
+     * is passed via the PGPASSWORD env var in dump() so it never reaches the process table.
+     *
+     * @param  array<string, mixed>  $config
+     * @return list<string>
+     */
+    public function buildCommand(string $binary, array $config, string $database, string $outputPath): array
+    {
         $schema = (string) config('notifier.postgres_schema', 'public');
 
         $command = [
@@ -66,21 +94,7 @@ final class PostgresDumper implements DatabaseDumperInterface
             $command[] = '--exclude-table='.$qualified;
         }
 
-        $process = new Process($command);
-        $process->setTimeout(600);
-        // Password via PGPASSWORD env var (not argv) - same rationale as MYSQL_PWD: keeps
-        // it out of /proc/*/cmdline and `ps` output on shared hosts.
-        $process->setEnv(['PGPASSWORD' => (string) ($config['password'] ?? '')]);
-        $process->run();
-
-        if (! $process->isSuccessful()) {
-            $logger->error('❌ '.$binary.' failed', [
-                'exitCode' => $process->getExitCode(),
-                'error' => $process->getErrorOutput(),
-            ]);
-
-            throw new RuntimeException('Database backup failed: '.$process->getErrorOutput());
-        }
+        return $command;
     }
 
     public function describe(): string

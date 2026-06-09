@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use Devuni\Notifier\Enums\BackupTypeEnum;
 use Devuni\Notifier\Interfaces\DatabaseDumperInterface;
 use Devuni\Notifier\Interfaces\ZipCreatorInterface;
+use Devuni\Notifier\Services\Database\LazyDatabaseDumper;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 use Throwable;
@@ -33,8 +34,14 @@ final class NotifierDatabaseService
         $filename = 'backup-'.Carbon::now()->format('Y-m-d_H-i-s').'.sql';
         $path = $backupDirectory.'/'.$filename;
 
+        // Log the concrete dumper, not the lazy proxy, so the entry distinguishes
+        // MySQL vs PostgreSQL backups.
+        $concreteDumper = $this->databaseDumper instanceof LazyDatabaseDumper
+            ? $this->databaseDumper->resolve()
+            : $this->databaseDumper;
+
         $logger->info('➡️ creating backup file', [
-            'dumper' => $this->databaseDumper::class,
+            'dumper' => $concreteDumper::class,
         ]);
 
         $this->databaseDumper->dump($path);

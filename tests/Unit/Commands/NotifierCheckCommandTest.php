@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Devuni\Notifier\Commands\NotifierCheckCommand;
+use Devuni\Notifier\Services\Database\MysqlDumper;
+use Devuni\Notifier\Services\Database\PostgresDumper;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 
@@ -57,17 +59,24 @@ describe('NotifierCheckCommand', function () {
                 ->assertExitCode(1);
         });
 
-        it('shows masked configuration values', function () {
+        it('shows masked configuration values without leaking the secrets', function () {
             config([
                 'notifier.backup_code' => 'my-secret-code',
                 'notifier.backup_url' => 'https://test-backup.com/upload',
                 'notifier.backup_zip_password' => 'secret-password',
             ]);
 
-            $this->artisan('notifier:check')
-                ->expectsOutputToContain('NOTIFIER_BACKUP_CODE:')
-                ->expectsOutputToContain('NOTIFIER_URL:')
-                ->expectsOutputToContain('NOTIFIER_BACKUP_PASSWORD:');
+            // Capture the rendered output directly: chaining many expectsOutputToContain()
+            // assertions on a single PendingCommand is unreliable.
+            Artisan::call('notifier:check');
+            $output = Artisan::output();
+
+            expect($output)->toContain('NOTIFIER_BACKUP_CODE:');
+            expect($output)->toContain('NOTIFIER_BACKUP_PASSWORD:');
+            // Only presence + length is reported, never any plaintext secret characters.
+            expect($output)->toContain('chars)');
+            expect($output)->not->toContain('my-secret-code');
+            expect($output)->not->toContain('secret-password');
         });
     });
 
@@ -98,15 +107,64 @@ describe('NotifierCheckCommand', function () {
     });
 
     describe('database dump tool check', function () {
-        it('checks for the configured database dump tool', function () {
+        it('reports the configured connection and driver', function () {
             config([
                 'notifier.backup_code' => 'test-code',
-                'notifier.backup_url' => 'https://test-backup.com/upload',
+                'notifier.backup_url' => '',
+                'notifier.backup_zip_password' => 'test-password',
+                'database.connections.notifier_mysql' => ['driver' => 'mysql', 'database' => 'app', 'host' => '127.0.0.1'],
+                'notifier.database_connection' => 'notifier_mysql',
+            ]);
+
+            $this->artisan('notifier:check')
+                ->expectsOutputToContain('driver: mysql');
+        });
+
+        it('reports the dump binary version when mysqldump is installed', function () {
+            if (! MysqlDumper::isAvailable()) {
+                $this->markTestSkipped('mysqldump is not installed in this environment');
+            }
+
+            config([
+                'notifier.backup_code' => 'test-code',
+                'notifier.backup_url' => '',
+                'notifier.backup_zip_password' => 'test-password',
+                'database.connections.notifier_mysql' => ['driver' => 'mysql', 'database' => 'app', 'host' => '127.0.0.1'],
+                'notifier.database_connection' => 'notifier_mysql',
+            ]);
+
+            $this->artisan('notifier:check')
+                ->expectsOutputToContain('mysqldump');
+        });
+
+        it('fails the check for an unsupported driver', function () {
+            // The default test connection is sqlite, which has no dump strategy.
+            config([
+                'notifier.backup_code' => 'test-code',
+                'notifier.backup_url' => '',
                 'notifier.backup_zip_password' => 'test-password',
             ]);
 
             $this->artisan('notifier:check')
-                ->expectsOutputToContain('Checking database dump tool');
+                ->expectsOutputToContain('Unsupported database driver')
+                ->assertExitCode(1);
+        });
+
+        it('fails the check for pgsql when no postgres client is installed', function () {
+            if (PostgresDumper::isAvailable()) {
+                $this->markTestSkipped('a postgres client is installed in this environment');
+            }
+
+            config([
+                'notifier.backup_code' => 'test-code',
+                'notifier.backup_url' => '',
+                'notifier.backup_zip_password' => 'test-password',
+                'database.connections.notifier_pgsql' => ['driver' => 'pgsql', 'database' => 'app', 'host' => '127.0.0.1'],
+                'notifier.database_connection' => 'notifier_pgsql',
+            ]);
+
+            $this->artisan('notifier:check')
+                ->expectsOutputToContain('Required dump binary is not available on PATH');
         });
     });
 
