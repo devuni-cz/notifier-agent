@@ -10,15 +10,19 @@ use Devuni\Notifier\Commands\NotifierInstallCommand;
 use Devuni\Notifier\Commands\NotifierStorageBackupCommand;
 use Devuni\Notifier\Interfaces\DatabaseDumperInterface;
 use Devuni\Notifier\Interfaces\ZipCreatorInterface;
+use Devuni\Notifier\Services\AnnouncementsService;
 use Devuni\Notifier\Services\ChunkedUploadService;
 use Devuni\Notifier\Services\Database\MysqlDumper;
 use Devuni\Notifier\Services\Database\PostgresDumper;
+use Devuni\Notifier\Services\NotifierApiClient;
 use Devuni\Notifier\Services\NotifierConfigService;
 use Devuni\Notifier\Services\NotifierDatabaseService;
 use Devuni\Notifier\Services\NotifierLoggerService;
 use Devuni\Notifier\Services\NotifierStorageService;
 use Devuni\Notifier\Services\Zip\CliZipCreator;
 use Devuni\Notifier\Services\Zip\PhpZipCreator;
+use Devuni\Notifier\View\Components\AnnouncementsNotice;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use RuntimeException;
 
@@ -33,10 +37,12 @@ final class NotifierServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(self::basePath('/config/notifier.php'), 'notifier');
 
+        $this->app->singleton(NotifierApiClient::class);
         $this->app->singleton(NotifierConfigService::class);
         $this->app->singleton(ChunkedUploadService::class);
         $this->app->singleton(NotifierDatabaseService::class);
         $this->app->singleton(NotifierStorageService::class);
+        $this->app->singleton(AnnouncementsService::class);
 
         // Bind lazily: the actual dumper is resolved on first use, so unsupported
         // drivers (e.g. sqlite in test envs) don't blow up at container resolution
@@ -78,6 +84,10 @@ final class NotifierServiceProvider extends ServiceProvider
                 self::basePath('/config/notifier.php') => config_path('notifier.php'),
             ], 'notifier-config');
 
+            $this->publishes([
+                self::basePath('/resources/views') => resource_path('views/vendor/notifier'),
+            ], 'notifier-views');
+
             $this->commands([
                 NotifierCheckCommand::class,
                 NotifierDatabaseBackupCommand::class,
@@ -85,6 +95,16 @@ final class NotifierServiceProvider extends ServiceProvider
                 NotifierStorageBackupCommand::class,
             ]);
         }
+
+        // The <x-notifier-announcements-notice /> component is always available; the
+        // AnnouncementsService itself gates behavior on the `features.announcements` flag, so a
+        // disabled install renders nothing and makes no HTTP call.
+        $this->loadViewsFrom(self::basePath('/resources/views'), 'notifier');
+        $this->loadViewComponentsAs('notifier', [
+            AnnouncementsNotice::class,
+        ]);
+
+        $this->registerFilamentAnnouncements();
 
         if (config('notifier.routes_enabled', true)) {
             $this->loadRoutesFrom(self::basePath('/routes/web.php'));
@@ -122,5 +142,36 @@ final class NotifierServiceProvider extends ServiceProvider
                 .'Supported drivers: mysql, mariadb, pgsql.'
             ),
         };
+    }
+
+    /**
+     * Auto-inject the active announcements as a banner into Filament panels via a
+     * render hook. No-ops unless the announcements feature is on, the Filament
+     * integration is enabled, and Filament is actually installed in the host app -
+     * so non-Filament hosts (and the package's own tests) are never touched.
+     *
+     * The render hook is identified by a plain string, which is stable across
+     * Filament v3/v4/v5, so no Filament class is referenced at the type level.
+     */
+    private function registerFilamentAnnouncements(): void
+    {
+        if (! config('notifier.features.announcements', true)) {
+            return;
+        }
+
+        if (! config('notifier.announcements.filament.enabled', true)) {
+            return;
+        }
+
+        if (! class_exists(\Filament\Support\Facades\FilamentView::class)) {
+            return;
+        }
+
+        \Filament\Support\Facades\FilamentView::registerRenderHook(
+            (string) config('notifier.announcements.filament.render_hook', 'panels::content.start'),
+            fn (): string => View::make('notifier::filament.announcements', [
+                'announcements' => $this->app->make(AnnouncementsService::class)->activeAnnouncements(),
+            ])->render(),
+        );
     }
 }

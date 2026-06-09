@@ -74,7 +74,7 @@ function makeNotifierDatabaseService(
     ZipCreatorInterface $zip,
 ): NotifierDatabaseService {
     return new NotifierDatabaseService(
-        new ChunkedUploadService(new NotifierLoggerService()),
+        app(ChunkedUploadService::class),
         $zip,
         $dumper,
         new NotifierLoggerService(),

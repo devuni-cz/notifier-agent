@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use Devuni\Notifier\Services\ChunkedUploadService;
-use Devuni\Notifier\Services\NotifierLoggerService;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -12,7 +11,7 @@ use Illuminate\Support\Facades\Http;
  */
 function invokeStatusUrlGuard(string $statusUrl, string $baseUrl): void
 {
-    $service = new ChunkedUploadService(new NotifierLoggerService());
+    $service = app(ChunkedUploadService::class);
     $method = new ReflectionMethod($service, 'assertTrustedStatusUrl');
     $method->setAccessible(true);
     $method->invoke($service, $statusUrl, $baseUrl);
@@ -24,10 +23,10 @@ function invokeStatusUrlGuard(string $statusUrl, string $baseUrl): void
  */
 function invokeWaitForCompletion(string $statusUrl, int $maxWaitSeconds = 10, int $pollIntervalSeconds = 0): void
 {
-    $service = new ChunkedUploadService(new NotifierLoggerService());
+    $service = app(ChunkedUploadService::class);
     $method = new ReflectionMethod($service, 'waitForCompletion');
     $method->setAccessible(true);
-    $method->invoke($service, $statusUrl, 'super-secret-token', 'upload-id', $maxWaitSeconds, $pollIntervalSeconds);
+    $method->invoke($service, $statusUrl, 'upload-id', $maxWaitSeconds, $pollIntervalSeconds);
 }
 
 describe('ChunkedUploadService::assertTrustedStatusUrl', function () {
@@ -100,7 +99,7 @@ describe('ChunkedUploadService finalize polling', function () {
 
         try {
             // The guard must fire at finalize time - before any poll/sleep happens.
-            expect(fn () => (new ChunkedUploadService(new NotifierLoggerService()))
+            expect(fn () => app(ChunkedUploadService::class)
                 ->upload($tmpPath, 'database'))
                 ->toThrow(RuntimeException::class, 'Refusing to poll status_url on unexpected host');
 
@@ -130,7 +129,7 @@ describe('ChunkedUploadService finalize polling', function () {
         file_put_contents($tmpPath, 'backup payload');
 
         try {
-            (new ChunkedUploadService(new NotifierLoggerService()))->upload($tmpPath, 'database');
+            app(ChunkedUploadService::class)->upload($tmpPath, 'database');
 
             // init + one chunk + finalize, each carrying the secret to the trusted origin.
             Http::assertSentCount(3);

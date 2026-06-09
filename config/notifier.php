@@ -201,4 +201,59 @@ return [
     |
     */
     'queue_connection' => env('NOTIFIER_QUEUE_CONNECTION', 'sync'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Feature Toggles
+    |--------------------------------------------------------------------------
+    |
+    | Switches for agent features beyond backups. Announcements are ON by default
+    | but cost nothing until NOTIFIER_URL is configured - the service no-ops and
+    | makes no HTTP call without a target, so a backup-only install is unaffected.
+    |
+    */
+    'features' => [
+        // Pull this site's maintenance/announcement notices from the central
+        // server and expose them for rendering in your own dashboard.
+        'announcements' => env('NOTIFIER_ANNOUNCEMENTS_ENABLED', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Announcements
+    |--------------------------------------------------------------------------
+    |
+    | When the `announcements` feature is enabled, the package fetches this site's
+    | active announcements from `{NOTIFIER_URL}/announcements` (per-repository, authenticated
+    | with the same X-Notifier-Token). Responses are cached so the consumer
+    | dashboard never makes a blocking request on every page load.
+    |
+    */
+    'announcements' => [
+        // Seconds a successful response is cached. Default 15 minutes.
+        'cache_ttl' => (int) env('NOTIFIER_ANNOUNCEMENTS_CACHE_TTL', 900),
+
+        // Seconds to negative-cache an empty result after a fetch failure, so a
+        // down/slow server doesn't make every dashboard load pay the timeout.
+        'failure_cache_ttl' => (int) env('NOTIFIER_ANNOUNCEMENTS_FAILURE_CACHE_TTL', 60),
+
+        // HTTP timeout (seconds) for the announcements request.
+        'timeout' => (int) env('NOTIFIER_ANNOUNCEMENTS_TIMEOUT', 5),
+
+        /*
+        | Filament integration. When the host app uses Filament, the package can
+        | auto-inject the active announcements as a banner into every panel page
+        | via a Filament render hook - no manual placement needed. Registered only
+        | when Filament is actually installed, so non-Filament hosts are unaffected.
+        */
+        'filament' => [
+            // Auto-inject the announcements banner into Filament panels.
+            'enabled' => env('NOTIFIER_ANNOUNCEMENTS_FILAMENT', true),
+
+            // Which Filament render hook to inject at. A plain string keeps this
+            // version-agnostic across Filament v3/v4/v5. Default: top of the page
+            // content. Alternatives: 'panels::body.start', 'panels::topbar.end'.
+            'render_hook' => env('NOTIFIER_ANNOUNCEMENTS_FILAMENT_HOOK', 'panels::content.start'),
+        ],
+    ],
 ];

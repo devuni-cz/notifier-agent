@@ -5,6 +5,31 @@ All notable changes to `devuni/notifier-package` will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.0] - 2026-06-09
+
+### Added
+
+-   **Announcements.** The package can now pull this site's maintenance/announcement notices from the central server and surface them in your dashboard — the first step toward two-way communication between the agent and the platform. **On by default** (costs nothing until `NOTIFIER_URL` is set — the service no-ops without a target).
+    -   **Per-repository, secure by design.** Requests reuse the existing `NOTIFIER_URL` and `X-Notifier-Token`: `GET {NOTIFIER_URL}/announcements` (e.g. `.../api/v1/repositories/52740614/announcements`). The server returns only this site's announcements, so no other repositories are ever disclosed to the client. Redirect-following is disabled on the token-bearing request.
+    -   **`AnnouncementsService::activeAnnouncements()`** — fetches and returns this site's active announcements. Always returns an array and never throws, so a down/slow announcement server can never break the consumer's dashboard.
+    -   **Filament auto-injection.** On hosts running Filament (v3/v4/v5), the active announcements are auto-injected as a styled banner into every panel page via a render hook — no manual placement. Configurable via `NOTIFIER_ANNOUNCEMENTS_FILAMENT_HOOK` (default `panels::content.start`) and toggleable with `NOTIFIER_ANNOUNCEMENTS_FILAMENT`. Registered only when Filament is actually installed, so other hosts are unaffected.
+    -   **`<x-notifier-announcements-notice />` Blade component** — drop it into your own dashboard to render the active announcements as notice blocks (unstyled; target the `.notifier-announcement` / `.notifier-announcement--{severity}` classes). Views are publishable via `--tag=notifier-views`.
+    -   **Framework-agnostic** — Inertia/Vue/React hosts can render `AnnouncementsService::activeAnnouncements()` themselves (e.g. as a shared Inertia prop).
+    -   **Caching** — successful responses are cached (`NOTIFIER_ANNOUNCEMENTS_CACHE_TTL`, default 900 s) and failures are briefly negative-cached (`NOTIFIER_ANNOUNCEMENTS_FAILURE_CACHE_TTL`, default 60 s), so the dashboard never makes a blocking HTTP request on every page load.
+    -   New config: `notifier.features.announcements` (toggle, env `NOTIFIER_ANNOUNCEMENTS_ENABLED`, **default `true`**) and the `notifier.announcements.*` block (`cache_ttl`, `failure_cache_ttl`, `timeout`, plus `filament.enabled` / `filament.render_hook`). Backward-compatible defaults via `mergeConfigFrom` — no need to re-publish `config/notifier.php`.
+
+### Notes
+
+-   The feature is **on by default** but makes no HTTP call until `NOTIFIER_URL` is configured, so a backup-only install carries no extra traffic. It pairs with a matching `GET /api/v1/repositories/{id}/announcements` endpoint on `notifier-devuni-cz` (server side, separate).
+
+### Changed
+
+-   **All server communication now flows through a single `NotifierApiClient`.** The HTTPS-only enforcement, the `X-Notifier-Token` header, redirect-disabling, base-URL resolution, and JSON error formatting that were duplicated across `ChunkedUploadService` (push) and `AnnouncementsService` (pull) now live in one transport. New agent capabilities inherit these invariants and cannot accidentally omit one. Backup-upload behavior is unchanged (all existing tests pass).
+
+### Security
+
+-   **The announcements pull is now HTTPS-only, matching the backup path.** Previously `AnnouncementsService` did not enforce `https://` on `NOTIFIER_URL`, so a misconfigured `http://` URL would have sent the `X-Notifier-Token` secret over cleartext. Centralizing the transport in `NotifierApiClient` closes that gap: the token is never attached to a non-HTTPS request — the pull logs and returns nothing instead.
+
 ## [2.7.1] - 2026-06-09
 
 ### Security
