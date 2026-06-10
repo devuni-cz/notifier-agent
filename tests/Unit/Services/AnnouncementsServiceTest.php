@@ -25,7 +25,9 @@ describe('AnnouncementsService::activeAnnouncements', function () {
         Http::fake([
             '*/repositories/52740614/announcements' => Http::response([
                 'announcements' => [
-                    ['content' => 'Maintenance on 2026-06-30', 'severity' => 'warning'],
+                    // 'high' is a real AnnouncementSeverityEnum value the server can send
+                    // (critical/high/medium/low/info) — keep the contract pinned to reality.
+                    ['content' => 'Maintenance on 2026-06-30', 'severity' => 'high'],
                 ],
             ], 200),
         ]);

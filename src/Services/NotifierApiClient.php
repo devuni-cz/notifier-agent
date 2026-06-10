@@ -119,12 +119,15 @@ final class NotifierApiClient
 
     /**
      * A pending request pre-loaded with the transport invariants: timeout,
-     * redirects disabled, and the X-Notifier-Token secret.
+     * redirects disabled, JSON responses, and the X-Notifier-Token secret.
      */
     private function pending(int $timeout): PendingRequest
     {
         return Http::timeout($timeout)
             ->withOptions(['allow_redirects' => false])
+            // Without an Accept header, Laravel's abort() on the server renders
+            // an HTML error page, which would end up verbatim in our logs.
+            ->acceptJson()
             ->withHeaders(['X-Notifier-Token' => (string) config('notifier.backup_code')]);
     }
 

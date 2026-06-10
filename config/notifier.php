@@ -234,8 +234,9 @@ return [
         'cache_ttl' => (int) env('NOTIFIER_ANNOUNCEMENTS_CACHE_TTL', 900),
 
         // Seconds to negative-cache an empty result after a fetch failure, so a
-        // down/slow server doesn't make every dashboard load pay the timeout.
-        'failure_cache_ttl' => (int) env('NOTIFIER_ANNOUNCEMENTS_FAILURE_CACHE_TTL', 60),
+        // down/slow/not-yet-deployed server doesn't make every dashboard load
+        // pay the timeout (or re-log a warning every minute).
+        'failure_cache_ttl' => (int) env('NOTIFIER_ANNOUNCEMENTS_FAILURE_CACHE_TTL', 300),
 
         // HTTP timeout (seconds) for the announcements request.
         'timeout' => (int) env('NOTIFIER_ANNOUNCEMENTS_TIMEOUT', 5),

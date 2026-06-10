@@ -17,14 +17,14 @@ describe('<x-notifier-announcements-notice />', function () {
         Http::fake([
             '*/announcements' => Http::response([
                 'announcements' => [
-                    ['content' => 'Maintenance on 2026-06-30, ~5h downtime.', 'severity' => 'warning'],
+                    ['content' => 'Maintenance on 2026-06-30, ~5h downtime.', 'severity' => 'high'],
                 ],
             ], 200),
         ]);
 
         $this->blade('<x-notifier-announcements-notice />')
             ->assertSee('Maintenance on 2026-06-30, ~5h downtime.')
-            ->assertSee('notifier-announcement--warning', false);
+            ->assertSee('notifier-announcement--high', false);
     });
 
     it('renders nothing when there are no active announcements', function () {

@@ -75,6 +75,32 @@ describe('NotifierApiClient requests', function () {
         expect(fn () => apiClient()->get('/announcements'))->toThrow(RuntimeException::class, 'must use HTTPS');
         Http::assertNothingSent();
     });
+
+    it('requests JSON responses (Accept: application/json)', function () {
+        Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+        apiClient()->get('/announcements');
+
+        Http::assertSent(fn ($request) => $request->hasHeader('Accept', 'application/json'));
+    });
+
+    it('never follows a redirect on a token-bearing request', function () {
+        // Guzzle re-sends custom headers across redirects, so a 30x from the
+        // server would relay X-Notifier-Token to the Location target. The
+        // transport must surface the 30x instead of following it.
+        Http::fake([
+            'https://notifier.example.com/*' => Http::response('', 301, [
+                'Location' => 'https://evil.example.com/steal',
+            ]),
+            'https://evil.example.com/*' => Http::response('gotcha', 200),
+        ]);
+
+        $response = apiClient()->get('/announcements');
+
+        expect($response->status())->toBe(301);
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'evil.example.com'));
+        Http::assertSentCount(1);
+    });
 });
 
 describe('NotifierApiClient::formatError', function () {
