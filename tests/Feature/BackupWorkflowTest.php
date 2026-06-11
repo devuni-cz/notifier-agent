@@ -152,11 +152,13 @@ describe('Backup Workflow Integration', function () {
 
             $response = $this->postJson('/api/notifier/backup', ['type' => 'backup_database']);
 
-            expect($response->status())->toBe(500);
+            // A misconfigured server answers with the same generic 403 as a
+            // wrong token — configuration details are never disclosed.
+            expect($response->status())->toBe(403);
 
             $data = $response->json();
-            expect($data['message'])->toBe('Server configuration incomplete.');
-            expect($data['missing_variables'])->toBeArray();
+            expect($data['message'])->toBe('Invalid authentication token.');
+            expect($data)->not->toHaveKey('missing_variables');
         });
     });
 

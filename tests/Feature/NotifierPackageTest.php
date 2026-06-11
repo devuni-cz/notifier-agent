@@ -123,15 +123,15 @@ describe('Notifier Agent Basic Integration Tests', function () {
             expect($controller)->toBeInstanceOf(NotifierSendBackupController::class);
         })->skip('Controller requires service injection - see NotifierControllerTest');
 
-        it('handles missing environment variables', function () {
+        it('handles missing environment variables with a generic 403', function () {
             config(['notifier.backup_code' => '', 'notifier.backup_url' => '']);
 
             $response = $this->postJson('/api/notifier/backup', ['type' => 'backup_database']);
-            expect($response->status())->toBe(500);
+            expect($response->status())->toBe(403);
 
             $data = $response->json();
             expect($data)->toHaveKey('message');
-            expect($data)->toHaveKey('missing_variables');
+            expect($data)->not->toHaveKey('missing_variables');
         });
 
         it('validates request parameters', function () {

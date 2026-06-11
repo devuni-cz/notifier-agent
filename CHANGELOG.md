@@ -5,6 +5,19 @@ All notable changes to `devuni/notifier-agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-06-11
+
+### Security
+
+-   **Failed token attempts on the backup endpoint are now rate-limited.** The throttle middleware ran *after* token verification, so invalid-token requests were never throttled and the `X-Notifier-Token` could be brute-forced at an unlimited rate. Throttling now runs first; the existing limit (10/hour) is unchanged.
+-   **The backup endpoint no longer discloses configuration before authentication.** A missing token, an invalid token and a misconfigured server all return the same generic `403` body — previously the endpoint distinguished `401` vs `403` and a misconfigured install returned `500` **including the names of the missing `NOTIFIER_*` env variables**. The real reason is now logged server-side (with caller IP) instead.
+-   **Plaintext database dump lifecycle hardened.** The `.sql` dump is `chmod 0600` immediately after creation (no-op on Windows), and is deleted in a `finally` even when ZIP creation throws — previously a failing ZIP step left the unencrypted dump on disk indefinitely.
+-   **`notifier:install` now escapes values written to `.env`.** Values are double-quoted with backslash/double-quote escaping, so secrets containing quotes, spaces or backslashes can no longer corrupt the file (the replace-on-`--force` path also switched to `preg_replace_callback` so escaped values survive idempotent re-runs).
+
+### Notes
+
+-   Behavioral change for *unauthenticated/misconfigured* callers only: previous `401`/`500` responses are now a uniform `403`. Legitimate (valid-token) requests are unaffected.
+
 ## [1.0.1] - 2026-06-10
 
 ### Added
@@ -46,6 +59,7 @@ The first official release of **`devuni/notifier-agent`** — the client agent o
 -   The PHP namespace is **`Devuni\Notifier\`** and the env surface uses the established `NOTIFIER_*` keys.
 -   Built on the codebase previously published as `devuni/notifier-package` (2.x). That package is superseded by this one: its `v2.8.0` is the terminal release and all further development happens here. Migration is a one-step `composer remove devuni/notifier-package && composer require devuni/notifier-agent`.
 
-[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/devuni-cz/notifier-agent/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/devuni-cz/notifier-agent/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/devuni-cz/notifier-agent/releases/tag/v1.0.0

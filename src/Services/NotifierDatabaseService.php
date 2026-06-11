@@ -54,6 +54,10 @@ final class NotifierDatabaseService
             );
         }
 
+        // Restrict the plaintext dump to the owner only. Suppress errors:
+        // chmod is a no-op on Windows and must never abort the backup.
+        @chmod($path, 0o600);
+
         $dumpSize = filesize($path);
 
         if ($dumpSize === false || $dumpSize === 0) {
@@ -76,9 +80,15 @@ final class NotifierDatabaseService
         if (! empty($password)) {
             $zipPath = $backupDirectory.'/backup-'.Carbon::now()->format('Y-m-d_H-i-s').'.zip';
 
-            $this->zipCreator->create($path, $zipPath, $password, []);
+            try {
+                $this->zipCreator->create($path, $zipPath, $password, []);
+            } finally {
+                // Never leave the plaintext dump behind, even when ZIP
+                // creation throws.
+                File::delete($path);
+                $logger->info('➡️ plaintext SQL dump cleaned up');
+            }
 
-            File::delete($path);
             $logger->info('➡️ SQL dump encrypted into ZIP archive');
 
             return $zipPath;
