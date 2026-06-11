@@ -5,6 +5,13 @@ All notable changes to `devuni/notifier-agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-06-11
+
+### Added
+
+-   **Announcement types.** The control plane can now classify announcements (`maintenance` / `outage` / `release` / `notice`); typed announcements render with a small chip label (Údržba / Výpadek / Novinka) in both the Filament banner and the Blade component, plus a `notifier-announcement--type-{type}` CSS class. `notice`, unknown types, and payloads from older servers render exactly as before — fully backward compatible.
+-   **`data-announcement-id` attribute** on each rendered announcement (when the server sends `id`) — groundwork for client-side dismissal/deduplication later.
+
 ## [1.0.2] - 2026-06-11
 
 ### Security
@@ -59,7 +66,8 @@ The first official release of **`devuni/notifier-agent`** — the client agent o
 -   The PHP namespace is **`Devuni\Notifier\`** and the env surface uses the established `NOTIFIER_*` keys.
 -   Built on the codebase previously published as `devuni/notifier-package` (2.x). That package is superseded by this one: its `v2.8.0` is the terminal release and all further development happens here. Migration is a one-step `composer remove devuni/notifier-package && composer require devuni/notifier-agent`.
 
-[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/devuni-cz/notifier-agent/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/devuni-cz/notifier-agent/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/devuni-cz/notifier-agent/releases/tag/v1.0.0
