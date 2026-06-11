@@ -27,6 +27,21 @@ describe('<x-notifier-announcements-notice />', function () {
             ->assertSee('notifier-announcement--high', false);
     });
 
+    it('renders the type chip and id attribute when the server sends them', function () {
+        Http::fake([
+            '*/announcements' => Http::response([
+                'announcements' => [
+                    ['id' => 7, 'content' => 'Odstávka v neděli.', 'severity' => 'high', 'type' => 'outage'],
+                ],
+            ], 200),
+        ]);
+
+        $this->blade('<x-notifier-announcements-notice />')
+            ->assertSee('Výpadek')
+            ->assertSee('notifier-announcement--type-outage', false)
+            ->assertSee('data-announcement-id="7"', false);
+    });
+
     it('renders nothing when there are no active announcements', function () {
         Http::fake(['*/announcements' => Http::response(['announcements' => []], 200)]);
 

@@ -4,6 +4,7 @@
     <style>
         .notifier-announcements { display: flex; flex-direction: column; gap: .5rem; padding: 1rem 1.5rem 0; }
         .notifier-announcement { border-radius: .5rem; border: 1px solid transparent; padding: .625rem 1rem; font-size: .875rem; line-height: 1.25rem; font-weight: 500; }
+        .notifier-announcement__type { font-weight: 700; font-size: .6875rem; text-transform: uppercase; letter-spacing: .05em; margin-right: .5rem; opacity: .85; }
         .notifier-announcement--critical { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
         .notifier-announcement--high     { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
         .notifier-announcement--medium   { background: #fffbeb; color: #92400e; border-color: #fde68a; }
@@ -19,12 +20,16 @@
     <div class="notifier-announcements">
         @foreach ($announcements as $announcement)
             @php($content = $announcement['content'] ?? null)
+            @php($type = \Devuni\Notifier\Enums\AnnouncementTypeEnum::tryFrom((string) ($announcement['type'] ?? '')))
             @if (! empty($content))
                 <div
                     role="status"
-                    class="notifier-announcement notifier-announcement--{{ $announcement['severity'] ?? 'info' }}"
+                    class="notifier-announcement notifier-announcement--{{ $announcement['severity'] ?? 'info' }}{{ $type ? ' notifier-announcement--type-'.$type->value : '' }}"
+                    @if (! empty($announcement['id'])) data-announcement-id="{{ $announcement['id'] }}" @endif
                 >
-                    {{ $content }}
+                    @if ($type?->getLabel())
+                        <span class="notifier-announcement__type">{{ $type->getLabel() }}</span>
+                    @endif{{ $content }}
                 </div>
             @endif
         @endforeach
