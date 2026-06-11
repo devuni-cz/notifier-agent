@@ -6,10 +6,10 @@
 
 ## 🔴 Bezpečnost
 
-- [ ] **Rate-limitovat neúspěšné pokusy o token na příchozím `/backup` endpointu.** Throttle middleware běží AŽ ZA `VerifyNotifierTokenMiddleware`, takže neplatné tokeny nejsou omezené a token lze brute-forcovat neomezenou rychlostí (zmírněno jen `hash_equals` + entropií). Přesunout throttle PŘED ověření tokenu, nebo přidat samostatný limiter na neúspěchy. — `routes/web.php:11-15`
-- [ ] **Plaintext `.sql` dump na disku.** Dump leží v `storage/app/private` s výchozími právy (bez `chmod 0600`) a při selhání tvorby ZIPu zůstane osiřelý navždy — cleanup ve `finally` má jen upload fáze, ne fáze tvorby zálohy. Přidat `chmod 0600` hned po dumpu a `try/finally` kolem celého create→zip, aby se plaintext smazal i při selhání ZIPu. — `src/Services/NotifierDatabaseService.php:25-116`
-- [ ] **Endpoint před autentizací prozrazuje konfiguraci.** Backup endpoint rozlišuje 401/403 a prozrazuje názvy chybějících env proměnných ještě před ověřením. Sjednotit chybové odpovědi. — middleware `/backup`
-- [ ] **`notifier:install` zapisuje tajemství do `.env` bez escapování.** Hodnota obsahující uvozovku rozbije/zkreslí konfiguraci. Escapovat/kvótovat hodnoty při zápisu. — `src/Commands/NotifierInstallCommand.php:93-110`
+- [x] ~~**Rate-limitovat neúspěšné pokusy o token na příchozím `/backup` endpointu.**~~ — v1.0.2: throttle běží před ověřením tokenu (limit 10/hod beze změny) + test na 429 při wrong-token floodu.
+- [x] ~~**Plaintext `.sql` dump na disku.**~~ — v1.0.2: `@chmod 0600` hned po dumpu (Windows no-op) + `try/finally` kolem zipování, dump se smaže i při selhání ZIPu; pokryto testem.
+- [x] ~~**Endpoint před autentizací prozrazuje konfiguraci.**~~ — v1.0.2: chybějící token / špatný token / rozbitá konfigurace = identická generická 403; skutečný důvod (vč. IP volajícího) jde do logu.
+- [x] ~~**`notifier:install` zapisuje tajemství do `.env` bez escapování.**~~ — v1.0.2: hodnoty se escapují (backslash + uvozovka), `--force` replace přes `preg_replace_callback` (jinak by escapované hodnoty mrzačil); testy vč. round-trip přes Dotenv::parse.
 - [ ] 🟡 **ZIP nešifruje názvy souborů uvnitř archivu** (obsah je AES-256, filenames ne). Zvážit, zda metadata souborů nejsou citlivá.
 
 ## 🔴 Release / packaging

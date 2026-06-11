@@ -44,15 +44,23 @@ describe('NotifierSendBackupController', function () {
     });
 
     describe('authentication', function () {
-        it('returns 401 when token header is missing', function () {
+        it('returns a generic 403 when token header is missing', function () {
             $this->postJson('/api/notifier/backup', ['type' => 'database'])
-                ->assertStatus(401);
+                ->assertStatus(403)
+                ->assertExactJson([
+                    'success' => false,
+                    'message' => 'Invalid authentication token.',
+                ]);
         });
 
-        it('returns 403 when token header is wrong', function () {
+        it('returns a generic 403 when token header is wrong', function () {
             $this->postJson('/api/notifier/backup', ['type' => 'database'], [
                 'X-Notifier-Token' => 'wrong-token',
-            ])->assertStatus(403);
+            ])->assertStatus(403)
+                ->assertExactJson([
+                    'success' => false,
+                    'message' => 'Invalid authentication token.',
+                ]);
         });
 
         it('returns 200 when token header is correct', function () {
@@ -66,19 +74,7 @@ describe('NotifierSendBackupController', function () {
     });
 
     describe('environment validation', function () {
-        it('returns 500 when environment variables are missing', function () {
-            Config::set('notifier.backup_code', '');
-            Config::set('notifier.backup_url', '');
-            Config::set('notifier.backup_zip_password', '');
-
-            $this->postJson('/api/notifier/backup', ['type' => 'database'], [
-                'X-Notifier-Token' => '',
-            ])->assertStatus(500);
-        });
-    });
-
-    describe('JSON response structure', function () {
-        it('returns proper JSON structure for missing variables error', function () {
+        it('returns the same generic 403 when environment variables are missing and leaks no env names', function () {
             Config::set('notifier.backup_code', '');
             Config::set('notifier.backup_url', '');
             Config::set('notifier.backup_zip_password', '');
@@ -87,8 +83,35 @@ describe('NotifierSendBackupController', function () {
                 'X-Notifier-Token' => '',
             ]);
 
-            $response->assertStatus(500)
-                ->assertJsonStructure(['message', 'missing_variables']);
+            // Identical to the wrong-token response: a misconfigured server
+            // must not be distinguishable before authentication.
+            $response->assertStatus(403)
+                ->assertExactJson([
+                    'success' => false,
+                    'message' => 'Invalid authentication token.',
+                ]);
+
+            expect($response->getContent())
+                ->not->toContain('missing_variables')
+                ->not->toContain('NOTIFIER_BACKUP_CODE')
+                ->not->toContain('NOTIFIER_BACKUP_PASSWORD')
+                ->not->toContain('NOTIFIER_URL');
+        });
+    });
+
+    describe('rate limiting', function () {
+        it('throttles repeated requests with a wrong token with 429', function () {
+            foreach (range(1, 10) as $attempt) {
+                $this->postJson('/api/notifier/backup', ['type' => 'database'], [
+                    'X-Notifier-Token' => 'wrong-token',
+                ])->assertStatus(403);
+            }
+
+            // Before the reorder, throttle ran after token verification, so
+            // invalid tokens returned 403 forever — an unlimited brute force.
+            $this->postJson('/api/notifier/backup', ['type' => 'database'], [
+                'X-Notifier-Token' => 'wrong-token',
+            ])->assertStatus(429);
         });
     });
 });

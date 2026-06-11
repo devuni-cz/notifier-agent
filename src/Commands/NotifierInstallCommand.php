@@ -97,16 +97,29 @@ final class NotifierInstallCommand extends Command
 
         foreach ($data as $key => $value) {
             $pattern = "/^{$key}=.*$/m";
-            $line = "{$key}=\"{$value}\"";
+            $line = $key.'='.$this->formatEnvValue($value);
 
             if (preg_match($pattern, $envContent)) {
-                $envContent = preg_replace($pattern, $line, $envContent);
+                // Callback keeps the replacement literal — preg_replace()
+                // would reinterpret backslashes and $ in the escaped value.
+                $envContent = preg_replace_callback($pattern, fn (): string => $line, $envContent);
             } else {
                 $envContent .= PHP_EOL.$line;
             }
         }
 
         file_put_contents($envPath, $envContent);
+    }
+
+    /**
+     * Quote a value for a dotenv file: always double-quoted, with embedded
+     * backslashes and double quotes escaped so the value round-trips intact.
+     */
+    private function formatEnvValue(string $value): string
+    {
+        $escaped = str_replace(['\\', '"'], ['\\\\', '\\"'], $value);
+
+        return "\"{$escaped}\"";
     }
 
     private function ifAlreadyInstalled(): bool

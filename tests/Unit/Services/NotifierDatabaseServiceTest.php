@@ -121,6 +121,33 @@ describe('NotifierDatabaseService::createDatabaseBackup', function () {
         }
     });
 
+    it('deletes the plaintext dump even when zip creation throws', function () {
+        config(['notifier.backup_zip_password' => 'super-secret']);
+
+        $dumper = fakeDatabaseDumper('SELECT 1;');
+        $zip = new class implements ZipCreatorInterface
+        {
+            public static function isAvailable(): bool
+            {
+                return true;
+            }
+
+            public function create(string $sourcePath, string $zipPath, string $password, array $excludedFiles = []): int
+            {
+                throw new RuntimeException('ZIP creation failed');
+            }
+        };
+
+        $service = makeNotifierDatabaseService($dumper, $zip);
+
+        expect(fn () => $service->createDatabaseBackup())
+            ->toThrow(RuntimeException::class, 'ZIP creation failed');
+
+        // The plaintext .sql dump must not be left behind on disk.
+        expect($dumper->dumpedTo)->toEndWith('.sql');
+        expect(file_exists($dumper->dumpedTo))->toBeFalse();
+    });
+
     it('throws when the dump command produced no file', function () {
         config(['notifier.backup_zip_password' => null]);
 
