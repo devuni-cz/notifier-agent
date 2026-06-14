@@ -5,6 +5,15 @@ All notable changes to `devuni/notifier-agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-06-14
+
+### Added
+
+-   **Per-announcement placement.** Each announcement now carries a `dashboard_type` (`filament` | `custom`, default `filament`) and an optional `target`, so the control plane decides where each notice lands instead of one global spot.
+    -   **Filament hosts** route each announcement to the render hook named in its `target`; a null `target` falls to the default `render_hook`. List every position you want to support in the new `render_hooks` config (env `NOTIFIER_ANNOUNCEMENTS_RENDER_HOOKS`, comma-separated) — the default hook is always included, and each hook renders only the announcements that resolve to it.
+    -   **Custom (SPA) hosts** get a new `AnnouncementsService::customAnnouncements(?string $target = null)` helper that returns only `dashboard_type=custom` announcements (optionally for a single `target` element id), so Inertia/Vue/React hosts can mount each notice at its own DOM element. Same fail-open robustness as `activeAnnouncements()`.
+-   **Placement keys normalized** on every fetched announcement: `dashboard_type` defaults to `filament` and `target` to `null`, so older servers and existing consumers are fully backward compatible — out of the box (single `render_hook`, no `target`) every announcement still renders at the default hook exactly as before. `custom` announcements are never injected into Filament panels.
+
 ## [1.1.0] - 2026-06-11
 
 ### Added
@@ -66,7 +75,8 @@ The first official release of **`devuni/notifier-agent`** — the client agent o
 -   The PHP namespace is **`Devuni\Notifier\`** and the env surface uses the established `NOTIFIER_*` keys.
 -   Built on the codebase previously published as `devuni/notifier-package` (2.x). That package is superseded by this one: its `v2.8.0` is the terminal release and all further development happens here. Migration is a one-step `composer remove devuni/notifier-package && composer require devuni/notifier-agent`.
 
-[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/devuni-cz/notifier-agent/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/devuni-cz/notifier-agent/compare/v1.0.0...v1.0.1

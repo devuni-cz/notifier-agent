@@ -246,15 +246,39 @@ return [
         | auto-inject the active announcements as a banner into every panel page
         | via a Filament render hook - no manual placement needed. Registered only
         | when Filament is actually installed, so non-Filament hosts are unaffected.
+        |
+        | Placement model: each announcement carries a `dashboard_type`
+        | ("filament" | "custom", default "filament") and an optional `target`.
+        | A filament announcement is routed to the render hook named in its
+        | `target`; when `target` is null it falls to the default `render_hook`
+        | below. The package only injects at the hooks listed in `render_hooks`,
+        | so a host opts a position in simply by listing it there. `custom`
+        | announcements are NOT rendered here - they are for non-Filament (SPA)
+        | hosts, which fetch them via AnnouncementsService::customAnnouncements().
         */
         'filament' => [
             // Auto-inject the announcements banner into Filament panels.
             'enabled' => env('NOTIFIER_ANNOUNCEMENTS_FILAMENT', true),
 
-            // Which Filament render hook to inject at. A plain string keeps this
-            // version-agnostic across Filament v3/v4/v5. Default: top of the page
-            // content. Alternatives: 'panels::body.start', 'panels::topbar.end'.
+            // The default render hook for filament announcements with no `target`.
+            // A plain string keeps this version-agnostic across Filament v3/v4/v5.
+            // Default: top of the page content. Alternatives: 'panels::body.start',
+            // 'panels::topbar.end'.
             'render_hook' => env('NOTIFIER_ANNOUNCEMENTS_FILAMENT_HOOK', 'panels::content.start'),
+
+            // The full set of render hooks the package injects at. A targeted
+            // filament announcement only appears if its hook is listed here, so a
+            // host enables extra positions by adding them. The default `render_hook`
+            // is always included so null-target announcements still have a home.
+            // Set a comma-separated list to support multiple positions, e.g.
+            // NOTIFIER_ANNOUNCEMENTS_RENDER_HOOKS="panels::content.start,panels::topbar.end".
+            'render_hooks' => array_values(array_filter(array_map(
+                'trim',
+                explode(',', (string) env(
+                    'NOTIFIER_ANNOUNCEMENTS_RENDER_HOOKS',
+                    env('NOTIFIER_ANNOUNCEMENTS_FILAMENT_HOOK', 'panels::content.start'),
+                )),
+            ), static fn (string $hook): bool => $hook !== '')),
         ],
     ],
 ];
