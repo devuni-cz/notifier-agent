@@ -42,6 +42,40 @@ describe('<x-notifier-announcements-notice />', function () {
             ->assertSee('data-announcement-id="7"', false);
     });
 
+    it('renders the validity-window sub-line when the server sends start/end dates', function () {
+        config(['app.timezone' => 'Europe/Prague']);
+
+        Http::fake([
+            '*/announcements' => Http::response([
+                'announcements' => [
+                    [
+                        'content' => 'Plánovaná údržba.',
+                        'severity' => 'high',
+                        'starts_at' => '2026-06-13T21:12:00+00:00',
+                        'ends_at' => '2026-06-14T04:00:00+00:00',
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $this->blade('<x-notifier-announcements-notice />')
+            ->assertSee('notifier-announcement__validity', false)
+            ->assertSee('Platí: 13. 6. 2026 23:12 – 14. 6. 2026 06:00');
+    });
+
+    it('omits the validity sub-line when the server sends no start date', function () {
+        Http::fake([
+            '*/announcements' => Http::response([
+                'announcements' => [
+                    ['content' => 'No window.', 'severity' => 'info'],
+                ],
+            ], 200),
+        ]);
+
+        $this->blade('<x-notifier-announcements-notice />')
+            ->assertDontSee('notifier-announcement__validity', false);
+    });
+
     it('renders nothing when there are no active announcements', function () {
         Http::fake(['*/announcements' => Http::response(['announcements' => []], 200)]);
 

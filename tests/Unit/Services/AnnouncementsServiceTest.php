@@ -177,6 +177,145 @@ describe('AnnouncementsService::customAnnouncements', function () {
     });
 });
 
+describe('AnnouncementsService validity window', function () {
+    it('builds "Platí: start – end" in the host timezone with an absolute format when both dates are present', function () {
+        // 21:12 UTC in June is 23:12 in Europe/Prague (UTC+2, DST). The wire is
+        // UTC; the client must see its own local time, formatted absolutely so it
+        // can be cached for 15 min without going stale.
+        config(['app.timezone' => 'Europe/Prague']);
+
+        Http::fake([
+            '*/announcements' => Http::response([
+                'announcements' => [
+                    [
+                        'content' => 'Window.',
+                        'severity' => 'info',
+                        'starts_at' => '2026-06-13T21:12:00+00:00',
+                        'ends_at' => '2026-06-14T04:00:00+00:00',
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $announcements = announcementsService()->activeAnnouncements();
+
+        expect($announcements[0]['validity_label'])->toBe('Platí: 13. 6. 2026 23:12 – 14. 6. 2026 06:00');
+    });
+
+    it('builds "Platí od start (do odvolání)" when ends_at is null', function () {
+        config(['app.timezone' => 'Europe/Prague']);
+
+        Http::fake([
+            '*/announcements' => Http::response([
+                'announcements' => [
+                    [
+                        'content' => 'Open-ended.',
+                        'severity' => 'info',
+                        'starts_at' => '2026-06-13T21:12:00+00:00',
+                        'ends_at' => null,
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $announcements = announcementsService()->activeAnnouncements();
+
+        expect($announcements[0]['validity_label'])->toBe('Platí od 13. 6. 2026 23:12 (do odvolání)');
+    });
+
+    it('treats a missing/empty ends_at the same as null (do odvolání)', function () {
+        config(['app.timezone' => 'Europe/Prague']);
+
+        Http::fake([
+            '*/announcements' => Http::response([
+                'announcements' => [
+                    ['content' => 'No end key.', 'severity' => 'info', 'starts_at' => '2026-06-13T21:12:00+00:00'],
+                ],
+            ], 200),
+        ]);
+
+        $announcements = announcementsService()->activeAnnouncements();
+
+        expect($announcements[0]['validity_label'])->toBe('Platí od 13. 6. 2026 23:12 (do odvolání)');
+    });
+
+    it('returns null when starts_at is missing', function () {
+        Http::fake([
+            '*/announcements' => Http::response([
+                'announcements' => [
+                    ['content' => 'No start.', 'severity' => 'info', 'ends_at' => '2026-06-14T04:00:00+00:00'],
+                ],
+            ], 200),
+        ]);
+
+        $announcements = announcementsService()->activeAnnouncements();
+
+        expect($announcements[0])->toHaveKey('validity_label')
+            ->and($announcements[0]['validity_label'])->toBeNull();
+    });
+
+    it('never throws on a garbage starts_at and returns null (fail-soft)', function () {
+        Http::fake([
+            '*/announcements' => Http::response([
+                'announcements' => [
+                    ['content' => 'Bad date.', 'severity' => 'info', 'starts_at' => 'not-a-date', 'ends_at' => 'also-bad'],
+                ],
+            ], 200),
+        ]);
+
+        $announcements = announcementsService()->activeAnnouncements();
+
+        expect($announcements[0]['validity_label'])->toBeNull();
+    });
+
+    it('exposes validity_label under the public key constant', function () {
+        config(['app.timezone' => 'Europe/Prague']);
+
+        Http::fake([
+            '*/announcements' => Http::response([
+                'announcements' => [
+                    ['content' => 'Keyed.', 'severity' => 'info', 'starts_at' => '2026-06-13T21:12:00+00:00'],
+                ],
+            ], 200),
+        ]);
+
+        $announcements = announcementsService()->activeAnnouncements();
+
+        expect($announcements[0][AnnouncementsService::VALIDITY_LABEL_KEY])->toBe('Platí od 13. 6. 2026 23:12 (do odvolání)');
+    });
+
+    it('caches the validity_label as an absolute string (not a relative phrase that would go stale)', function () {
+        config(['app.timezone' => 'Europe/Prague']);
+
+        Http::fake([
+            '*/announcements' => Http::response([
+                'announcements' => [
+                    [
+                        'content' => 'Cached.',
+                        'severity' => 'info',
+                        'starts_at' => '2026-06-13T21:12:00+00:00',
+                        'ends_at' => '2026-06-14T04:00:00+00:00',
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        // First call populates the cache; the second is served from cache (no
+        // second HTTP request) and must return the identical absolute string.
+        $first = announcementsService()->activeAnnouncements();
+        $second = announcementsService()->activeAnnouncements();
+
+        Http::assertSentCount(1);
+
+        expect($first[0]['validity_label'])
+            ->toBe('Platí: 13. 6. 2026 23:12 – 14. 6. 2026 06:00')
+            ->and($second[0]['validity_label'])->toBe($first[0]['validity_label'])
+            // Absolute, not a diffForHumans phrase.
+            ->and($second[0]['validity_label'])->not->toContain('před')
+            ->and($second[0]['validity_label'])->not->toContain('ago');
+    });
+});
+
 describe('AnnouncementsService::repositoryId', function () {
     it('parses the repository id from the configured NOTIFIER_URL', function () {
         expect(announcementsService()->repositoryId())->toBe('52740614');

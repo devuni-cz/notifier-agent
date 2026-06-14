@@ -5,6 +5,7 @@
         .notifier-announcements { display: flex; flex-direction: column; gap: .5rem; padding: 1rem 1.5rem 0; }
         .notifier-announcement { border-radius: .5rem; border: 1px solid transparent; padding: .625rem 1rem; font-size: .875rem; line-height: 1.25rem; font-weight: 500; }
         .notifier-announcement__type { font-weight: 700; font-size: .6875rem; text-transform: uppercase; letter-spacing: .05em; margin-right: .5rem; opacity: .85; }
+        .notifier-announcement__validity { display: block; margin-top: .25rem; font-size: .75rem; font-weight: 400; opacity: .7; }
         .notifier-announcement--critical { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
         .notifier-announcement--high     { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
         .notifier-announcement--medium   { background: #fffbeb; color: #92400e; border-color: #fde68a; }
@@ -30,6 +31,9 @@
                     @if ($type?->getLabel())
                         <span class="notifier-announcement__type">{{ $type->getLabel() }}</span>
                     @endif{{ $content }}
+                    @if (! empty($announcement['validity_label']))
+                        <span class="notifier-announcement__validity">{{ $announcement['validity_label'] }}</span>
+                    @endif
                 </div>
             @endif
         @endforeach
