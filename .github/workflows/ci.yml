@@ -24,6 +24,11 @@ jobs:
             laravel: '12.*'
             testbench: '^10.0'
             coverage: true
+            # Laravel 12.62.0's Illuminate\Support\Carbon::plus() override is incompatible
+            # with nesbot/carbon 3.12.0 (which added a ?bool $overflow param) — fatal on boot.
+            # Pin carbon below 3.12 for the L12 row until Laravel 12 ships a compatible release.
+            # TODO: remove this constraint once Laravel 12 is fixed.
+            constraints: '"nesbot/carbon:<3.12"'
           - php: '8.4'
             laravel: '13.*'
             testbench: '^11.0'
@@ -50,7 +55,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          composer require "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --no-interaction --no-update
+          composer require "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" ${{ matrix.constraints }} --no-interaction --no-update
           composer update --prefer-stable --prefer-dist --no-interaction
 
       - name: Run tests

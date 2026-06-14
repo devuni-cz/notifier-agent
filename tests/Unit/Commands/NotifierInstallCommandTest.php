@@ -2,144 +2,104 @@
 
 declare(strict_types=1);
 
-use Devuni\Notifier\Commands\NotifierInstallCommand;
 use Illuminate\Support\Facades\File;
-use Mockery;
 
 describe('NotifierInstallCommand', function () {
     beforeEach(function () {
-        // Mock the base path to a test directory
-        $this->testBasePath = '/tmp/test-laravel';
-        $this->envPath = $this->testBasePath.'/.env';
-        $this->envExamplePath = $this->testBasePath.'/.env.example';
+        $this->basePath = sys_get_temp_dir().'/notifier-install-cmd-test-'.uniqid();
+        File::ensureDirectoryExists($this->basePath);
+        $this->app->setBasePath($this->basePath);
     });
 
     afterEach(function () {
-        Mockery::close();
+        File::deleteDirectory($this->basePath);
     });
 
     describe('handle method', function () {
         it('fails when configuration already exists without force flag', function () {
-            // Mock File::exists to return true for .env file
-            File::shouldReceive('exists')
-                ->with($this->envPath)
-                ->andReturn(true);
+            file_put_contents($this->basePath.'/.env', implode(PHP_EOL, [
+                'APP_NAME=Testing',
+                'NOTIFIER_BACKUP_CODE="existing-code"',
+                'NOTIFIER_URL="https://existing.com"',
+                'NOTIFIER_BACKUP_PASSWORD="existing-pass"',
+            ]).PHP_EOL);
 
-            // Mock file_get_contents to return env with all required variables
-            $envContent = "BACKUP_CODE=\"test-code\"\nBACKUP_URL=\"https://test.com\"\nBACKUP_ZIP_PASSWORD=\"password\"";
-            File::shouldReceive('get')
-                ->with($this->envPath)
-                ->andReturn($envContent);
-
-            $this->artisan(NotifierInstallCommand::class)
-                ->expectsOutput('ERROR')
+            $this->artisan('notifier:install')
+                ->expectsOutputToContain('already exists')
                 ->assertExitCode(1);
-        })->skip('Requires file system path mocking matching app()->basePath()');
+        });
 
-        it('succeeds when force flag is provided', function () {
-            File::shouldReceive('exists')->with($this->envPath)->andReturn(true);
+        it('overwrites the configuration when the force flag is provided', function () {
+            file_put_contents($this->basePath.'/.env', implode(PHP_EOL, [
+                'APP_NAME=Testing',
+                'NOTIFIER_BACKUP_CODE="existing-code"',
+                'NOTIFIER_URL="https://existing.com"',
+                'NOTIFIER_BACKUP_PASSWORD="existing-pass"',
+            ]).PHP_EOL);
 
-            $envContent = "BACKUP_CODE=\"test-code\"\nBACKUP_URL=\"https://test.com\"\nBACKUP_ZIP_PASSWORD=\"password\"";
-            File::shouldReceive('get')->with($this->envPath)->andReturn($envContent);
-
-            $this->artisan(NotifierInstallCommand::class, ['--force' => true])
-                ->expectsQuestion('👉 BACKUP_CODE: ', 'new-code')
-                ->expectsQuestion('👉 BACKUP_URL: ', 'https://new-url.com')
-                ->expectsQuestion('👉 BACKUP_ZIP_PASSWORD: ', 'new-password')
-                ->expectsOutput('DONE')
+            $this->artisan('notifier:install', ['--force' => true])
+                ->expectsQuestion('NOTIFIER_BACKUP_CODE', 'new-code')
+                ->expectsQuestion('NOTIFIER_URL', 'https://new-url.com')
+                ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'new-password')
+                ->expectsOutputToContain('saved successfully')
                 ->assertExitCode(0);
-        })->skip('Requires file system mocking');
 
-        it('creates .env file from .env.example when missing', function () {
-            // Mock .env doesn't exist
-            File::shouldReceive('exists')->with($this->envPath)->andReturn(false);
-            // Mock .env.example exists
-            File::shouldReceive('exists')->with($this->envExamplePath)->andReturn(true);
-            // Mock copy operation
-            File::shouldReceive('copy')->with($this->envExamplePath, $this->envPath)->once();
+            $envContent = file_get_contents($this->basePath.'/.env');
+            expect($envContent)
+                ->toContain('NOTIFIER_BACKUP_CODE="new-code"')
+                ->toContain('NOTIFIER_URL="https://new-url.com"')
+                ->toContain('NOTIFIER_BACKUP_PASSWORD="new-password"')
+                ->not->toContain('existing-code');
+        });
 
-            $this->artisan(NotifierInstallCommand::class)
-                ->expectsConfirmation('👉 Do you want to create .env from .env.example ?', 'yes')
-                ->expectsQuestion('👉 BACKUP_CODE: ', 'test-code')
-                ->expectsQuestion('👉 BACKUP_URL: ', 'https://test.com')
-                ->expectsQuestion('👉 BACKUP_ZIP_PASSWORD: ', 'password')
-                ->expectsOutput('DONE')
+        it('creates the .env file from .env.example when it is missing', function () {
+            file_put_contents($this->basePath.'/.env.example', 'APP_NAME=Example'.PHP_EOL);
+
+            expect(file_exists($this->basePath.'/.env'))->toBeFalse();
+
+            $this->artisan('notifier:install')
+                ->expectsConfirmation('Do you want to create .env from .env.example?', 'yes')
+                ->expectsQuestion('NOTIFIER_BACKUP_CODE', 'test-code')
+                ->expectsQuestion('NOTIFIER_URL', 'https://test.com')
+                ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'password')
+                ->expectsOutputToContain('.env file has been created.')
                 ->assertExitCode(0);
-        })->skip('Requires file system mocking');
 
-        it('fails when .env file creation is declined', function () {
-            File::shouldReceive('exists')->with($this->envPath)->andReturn(false);
+            expect(file_exists($this->basePath.'/.env'))->toBeTrue();
+            $envContent = file_get_contents($this->basePath.'/.env');
+            expect($envContent)
+                ->toContain('APP_NAME=Example')
+                ->toContain('NOTIFIER_BACKUP_CODE="test-code"');
+        });
 
-            $this->artisan(NotifierInstallCommand::class)
-                ->expectsConfirmation('👉 Do you want to create .env from .env.example ?', 'no')
-                ->expectsOutput('ERROR')
+        it('aborts when creation of the .env file is declined', function () {
+            file_put_contents($this->basePath.'/.env.example', 'APP_NAME=Example'.PHP_EOL);
+
+            $this->artisan('notifier:install')
+                ->expectsConfirmation('Do you want to create .env from .env.example?', 'no')
+                ->expectsOutputToContain('Installation aborted')
                 ->assertExitCode(1);
-        })->skip('Requires file system mocking');
 
-        it('validates required input fields', function () {
-            File::shouldReceive('exists')->with($this->envPath)->andReturn(true);
-            File::shouldReceive('get')->with($this->envPath)->andReturn('');
+            expect(file_exists($this->basePath.'/.env'))->toBeFalse();
+        });
 
-            $this->artisan(NotifierInstallCommand::class)
-                ->expectsQuestion('👉 BACKUP_CODE: ', '') // Empty input
-                ->expectsOutput('This field is required. Please enter a value!')
-                ->expectsQuestion('👉 BACKUP_CODE: ', 'valid-code') // Valid input
-                ->expectsQuestion('👉 BACKUP_URL: ', 'https://test.com')
-                ->expectsQuestion('👉 BACKUP_ZIP_PASSWORD: ', 'password')
-                ->expectsOutput('DONE')
+        it('proceeds to prompts when an existing .env is missing one required key', function () {
+            // Only two of the three required keys are present, so the install is
+            // not considered complete and the command proceeds (without --force).
+            file_put_contents($this->basePath.'/.env', implode(PHP_EOL, [
+                'APP_NAME=Testing',
+                'NOTIFIER_BACKUP_CODE="existing-code"',
+                'NOTIFIER_URL="https://existing.com"',
+            ]).PHP_EOL);
+
+            $this->artisan('notifier:install')
+                ->expectsQuestion('NOTIFIER_BACKUP_CODE', 'fresh-code')
+                ->expectsQuestion('NOTIFIER_URL', 'https://fresh.com')
+                ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'fresh-password')
                 ->assertExitCode(0);
-        })->skip('Requires input validation mocking');
-    });
 
-    describe('ensureEnvFileExists method', function () {
-        it('returns success when .env file exists', function () {
-            expect(true)->toBeTrue(); // Test file existence check
-        })->skip('Requires private method testing');
-
-        it('prompts to create .env from .env.example when missing', function () {
-            expect(true)->toBeTrue(); // Test file creation prompt
-        })->skip('Requires private method testing');
-    });
-
-    describe('askRequired method', function () {
-        it('reprompts when empty value is provided', function () {
-            expect(true)->toBeTrue(); // Test input validation
-        })->skip('Requires private method testing');
-    });
-
-    describe('updateEnv method', function () {
-        it('updates existing environment variables', function () {
-            expect(true)->toBeTrue(); // Test env file updating
-        })->skip('Requires private method testing');
-
-        it('adds new environment variables', function () {
-            expect(true)->toBeTrue(); // Test env file appending
-        })->skip('Requires private method testing');
-    });
-
-    describe('ifAlreadyInstalled method', function () {
-        it('returns true when all required variables are set', function () {
-            expect(true)->toBeTrue(); // Test installation check
-        })->skip('Requires private method testing');
-
-        it('returns false when any required variable is missing', function () {
-            expect(true)->toBeTrue(); // Test missing variables
-        })->skip('Requires private method testing');
-    });
-
-    describe('displayBanner method', function () {
-        it('displays package information correctly', function () {
-            expect(true)->toBeTrue(); // Test banner display
-        })->skip('Requires output testing');
-    });
-
-    describe('getCurrentVersion method', function () {
-        it('returns package version when available', function () {
-            expect(true)->toBeTrue(); // Test version retrieval
-        })->skip('Requires Composer version mocking');
-
-        it('returns unknown when package not found', function () {
-            expect(true)->toBeTrue(); // Test exception handling
-        })->skip('Requires exception mocking');
+            $envContent = file_get_contents($this->basePath.'/.env');
+            expect($envContent)->toContain('NOTIFIER_BACKUP_PASSWORD="fresh-password"');
+        });
     });
 });
