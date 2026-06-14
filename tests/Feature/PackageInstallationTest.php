@@ -93,11 +93,12 @@ describe('Package Configuration', function () {
         expect(config('notifier.excluded_files'))->toContain('.gitignore');
     });
 
-    it('respects environment variable fallbacks', function () {
-        // Verify config fallback chain: NOTIFIER_BACKUP_CODE falls back to BACKUP_CODE
+    it('respects configuration overrides applied at runtime', function () {
+        // NOTE: putenv() does not update Laravel's Dotenv repository once the
+        // config is cached, so runtime overrides must go through Config::set().
         Config::set('notifier.backup_code', 'test-code');
         expect(config('notifier.backup_code'))->toBe('test-code');
-    })->skip('putenv() does not update Laravel\'s Dotenv repository; use Config::set() instead');
+    });
 
     it('has proper default backup zip password', function () {
         // When backup_zip_password is not set, config returns null

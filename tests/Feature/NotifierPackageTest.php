@@ -5,7 +5,6 @@ declare(strict_types=1);
 use Devuni\Notifier\Commands\NotifierDatabaseBackupCommand;
 use Devuni\Notifier\Commands\NotifierInstallCommand;
 use Devuni\Notifier\Commands\NotifierStorageBackupCommand;
-use Devuni\Notifier\Controllers\NotifierSendBackupController;
 use Devuni\Notifier\NotifierServiceProvider;
 use Devuni\Notifier\Services\NotifierConfigService;
 use Illuminate\Support\Facades\Artisan;
@@ -92,12 +91,6 @@ describe('Notifier Agent Basic Integration Tests', function () {
             expect($command)->toBeInstanceOf(NotifierStorageBackupCommand::class);
         });
 
-        it('install command fails without environment', function () {
-            $exitCode = Artisan::call('notifier:install');
-            // Command should complete (success or failure depends on environment setup)
-            expect($exitCode)->toBeIn([0, 1]);
-        })->skip('Requires interactive input - use NotifierInstallCommandTest for install command tests');
-
         it('backup commands fail with missing environment', function () {
             config(['notifier.backup_code' => '', 'notifier.backup_url' => '']);
 
@@ -117,12 +110,6 @@ describe('Notifier Agent Basic Integration Tests', function () {
                 'notifier.backup_zip_password' => 'test-password',
             ]);
         });
-        it('can instantiate controller', function () {
-            $configService = new NotifierConfigService;
-            $controller = new NotifierSendBackupController($configService, new Devuni\Notifier\Services\NotifierDatabaseService, new Devuni\Notifier\Services\NotifierStorageService);
-            expect($controller)->toBeInstanceOf(NotifierSendBackupController::class);
-        })->skip('Controller requires service injection - see NotifierControllerTest');
-
         it('handles missing environment variables with a generic 403', function () {
             config(['notifier.backup_code' => '', 'notifier.backup_url' => '']);
 

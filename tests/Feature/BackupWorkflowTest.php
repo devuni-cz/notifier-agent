@@ -7,6 +7,7 @@ use Devuni\Notifier\Services\NotifierDatabaseService;
 use Devuni\Notifier\Services\NotifierStorageService;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 
 describe('Backup Workflow Integration', function () {
@@ -87,28 +88,24 @@ describe('Backup Workflow Integration', function () {
 
     describe('Install Command Workflow', function () {
         it('detects existing configuration without force flag', function () {
-            // Create temporary .env file with all required variables
-            $envPath = base_path('.env.test');
-            $envContent = "BACKUP_CODE=\"existing-code\"\nBACKUP_URL=\"https://existing.com\"\nBACKUP_ZIP_PASSWORD=\"existing-pass\"";
-            file_put_contents($envPath, $envContent);
+            // Point the app at a throwaway base path holding a fully configured .env.
+            $basePath = sys_get_temp_dir().'/notifier-workflow-install-'.uniqid();
+            File::ensureDirectoryExists($basePath);
+            file_put_contents($basePath.'/.env', implode(PHP_EOL, [
+                'APP_NAME=Testing',
+                'NOTIFIER_BACKUP_CODE="existing-code"',
+                'NOTIFIER_URL="https://existing.com"',
+                'NOTIFIER_BACKUP_PASSWORD="existing-pass"',
+            ]).PHP_EOL);
+            $this->app->setBasePath($basePath);
 
-            // Mock base_path to use test file
-            $this->app->instance('path.base', dirname($envPath));
-
+            // Existing configuration is detected, so the install bails out (exit 1).
             $exitCode = Artisan::call('notifier:install');
 
-            // Should detect existing configuration and fail without --force
-            expect($exitCode)->toBeIn([0, 1]); // Depends on implementation
+            expect($exitCode)->toBe(1);
 
-            // Clean up
-            if (file_exists($envPath)) {
-                unlink($envPath);
-            }
-        })->skip('Requires file system mocking');
-
-        it('can overwrite configuration with force flag', function () {
-            expect(true)->toBeTrue(); // Test force flag functionality
-        })->skip('Requires file system mocking');
+            File::deleteDirectory($basePath);
+        });
     });
 
     describe('API Workflow Integration', function () {
