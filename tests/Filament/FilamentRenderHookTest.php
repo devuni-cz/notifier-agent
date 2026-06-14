@@ -83,3 +83,21 @@ it('renders the banner through the configurable hook name, not a hard-coded one'
     expect((string) FilamentView::renderHook($hookName))
         ->toContain('Plánovaná údržba v neděli 22:00.');
 });
+
+it('out of the box, renders null-target announcements at the default hook but never a custom one', function () {
+    // Default config (single render_hook). A null-target announcement is the
+    // back-compat shape and must still render at the default hook, while a
+    // `custom` (SPA) announcement must be skipped entirely.
+    Http::fake([
+        '*/announcements' => Http::response([
+            'announcements' => [
+                ['id' => 7, 'content' => 'Plánovaná údržba v neděli 22:00.', 'severity' => 'critical'],
+                ['id' => 8, 'content' => 'SPA-only notice.', 'severity' => 'info', 'dashboard_type' => 'custom', 'target' => 'spa-banner'],
+            ],
+        ], 200),
+    ]);
+
+    expect((string) FilamentView::renderHook('panels::content.start'))
+        ->toContain('Plánovaná údržba v neděli 22:00.')
+        ->not->toContain('SPA-only notice.');
+});

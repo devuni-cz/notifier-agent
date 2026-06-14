@@ -55,6 +55,32 @@ final class AnnouncementsService
     }
 
     /**
+     * For non-Filament (custom SPA) hosts: the host renders these into its own
+     * element(s) keyed by 'target'. Returns the active announcements whose
+     * `dashboard_type` is "custom", optionally narrowed to a single target
+     * element id. Always returns a list and never throws (same robustness
+     * contract as activeAnnouncements()).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function customAnnouncements(?string $target = null): array
+    {
+        $custom = array_values(array_filter(
+            $this->activeAnnouncements(),
+            static fn (array $announcement): bool => ($announcement['dashboard_type'] ?? null) === 'custom',
+        ));
+
+        if ($target === null) {
+            return $custom;
+        }
+
+        return array_values(array_filter(
+            $custom,
+            static fn (array $announcement): bool => ($announcement['target'] ?? null) === $target,
+        ));
+    }
+
+    /**
      * The repository id this site reports as, parsed from the configured
      * NOTIFIER_URL (`.../repositories/{id}`). Null if it can't be determined.
      */
@@ -96,12 +122,34 @@ final class AnnouncementsService
 
         $announcements = $response->json('announcements');
 
-        $announcements = is_array($announcements) ? array_values($announcements) : [];
+        $announcements = is_array($announcements)
+            ? array_values(array_map($this->normalizePlacement(...), $announcements))
+            : [];
 
         Cache::put($cacheKey, $announcements, (int) config('notifier.announcements.cache_ttl', 900));
 
         /** @var list<array<string, mixed>> $announcements */
         return $announcements;
+    }
+
+    /**
+     * Ensure each wire item exposes the placement keys with sane defaults:
+     * `dashboard_type` falls back to "filament" (so older servers and the common
+     * case route to the Filament banner) and `target` falls back to null (use the
+     * agent default). All other server-sent keys pass through untouched.
+     *
+     * @param  array<string, mixed>  $announcement
+     * @return array<string, mixed>
+     */
+    private function normalizePlacement(array $announcement): array
+    {
+        $dashboardType = mb_trim((string) ($announcement['dashboard_type'] ?? ''));
+        $target = mb_trim((string) ($announcement['target'] ?? ''));
+
+        $announcement['dashboard_type'] = $dashboardType !== '' ? $dashboardType : 'filament';
+        $announcement['target'] = $target !== '' ? $target : null;
+
+        return $announcement;
     }
 
     /**

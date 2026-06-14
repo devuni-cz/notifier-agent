@@ -145,13 +145,45 @@ final class NotifierServiceProvider extends ServiceProvider
     }
 
     /**
-     * Auto-inject the active announcements as a banner into Filament panels via a
-     * render hook. No-ops unless the announcements feature is on, the Filament
+     * Filter a flat announcements list down to the ones that should render at a
+     * given Filament render hook: filament announcements (a missing/empty
+     * `dashboard_type` counts as filament for back-compat) whose effective target
+     * - the trimmed `target`, or the default hook when null/empty - equals $hook.
+     *
+     * Pure and side-effect free so it can be unit-tested in isolation.
+     *
+     * @param  list<array<string, mixed>>  $all
+     * @return list<array<string, mixed>>
+     */
+    private static function filamentAnnouncementsForHook(array $all, string $hook, string $defaultHook): array
+    {
+        return array_values(array_filter($all, static function (array $announcement) use ($hook, $defaultHook): bool {
+            $dashboardType = mb_trim((string) ($announcement['dashboard_type'] ?? ''));
+
+            if ($dashboardType !== '' && $dashboardType !== 'filament') {
+                return false;
+            }
+
+            $target = mb_trim((string) ($announcement['target'] ?? ''));
+            $effectiveTarget = $target !== '' ? $target : $defaultHook;
+
+            return $effectiveTarget === $hook;
+        }));
+    }
+
+    /**
+     * Auto-inject the active announcements as a banner into Filament panels via
+     * render hooks. No-ops unless the announcements feature is on, the Filament
      * integration is enabled, and Filament is actually installed in the host app -
      * so non-Filament hosts (and the package's own tests) are never touched.
      *
-     * The render hook is identified by a plain string, which is stable across
-     * Filament v3/v4/v5, so no Filament class is referenced at the type level.
+     * Each filament announcement is routed to its `target` render hook (or the
+     * default `render_hook` when `target` is null); `custom` announcements are
+     * skipped here - they belong to non-Filament (SPA) hosts. A hook is wired up
+     * only when it appears in `render_hooks`, and its closure renders just the
+     * announcements that resolve to that hook. The render hook is identified by a
+     * plain string, which is stable across Filament v3/v4/v5, so no Filament class
+     * is referenced at the type level.
      */
     private function registerFilamentAnnouncements(): void
     {
@@ -167,11 +199,61 @@ final class NotifierServiceProvider extends ServiceProvider
             return;
         }
 
-        \Filament\Support\Facades\FilamentView::registerRenderHook(
-            (string) config('notifier.announcements.filament.render_hook', 'panels::content.start'),
-            fn (): string => View::make('notifier::filament.announcements', [
-                'announcements' => $this->app->make(AnnouncementsService::class)->activeAnnouncements(),
-            ])->render(),
-        );
+        $defaultHook = (string) config('notifier.announcements.filament.render_hook', 'panels::content.start');
+
+        foreach ($this->filamentRenderHooks($defaultHook) as $hook) {
+            \Filament\Support\Facades\FilamentView::registerRenderHook(
+                $hook,
+                function () use ($hook, $defaultHook): string {
+                    $announcements = self::filamentAnnouncementsForHook(
+                        $this->app->make(AnnouncementsService::class)->activeAnnouncements(),
+                        $hook,
+                        $defaultHook,
+                    );
+
+                    if ($announcements === []) {
+                        return '';
+                    }
+
+                    return View::make('notifier::filament.announcements', [
+                        'announcements' => $announcements,
+                    ])->render();
+                },
+            );
+        }
+    }
+
+    /**
+     * The de-duplicated list of render hooks to wire up. Falls back to the single
+     * default hook when nothing is configured, and always includes the default so
+     * null-target filament announcements have a home.
+     *
+     * @return list<string>
+     */
+    private function filamentRenderHooks(string $defaultHook): array
+    {
+        $configured = config('notifier.announcements.filament.render_hooks', []);
+
+        $hooks = [];
+
+        if (is_array($configured)) {
+            foreach ($configured as $hook) {
+                $hook = mb_trim((string) $hook);
+
+                if ($hook !== '') {
+                    $hooks[] = $hook;
+                }
+            }
+        }
+
+        if ($hooks === []) {
+            $hooks[] = $defaultHook;
+        }
+
+        if (! in_array($defaultHook, $hooks, true)) {
+            $hooks[] = $defaultHook;
+        }
+
+        return array_values(array_unique($hooks));
     }
 }

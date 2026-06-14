@@ -87,7 +87,15 @@ On failure the response returns an opaque `error_id` (UUID) - the full detail (s
 
 Pull this site's maintenance/announcement notices from the central server and show them in your dashboard. **On by default** - it costs nothing until `NOTIFIER_URL` is set (the service no-ops without a target). Disable with `NOTIFIER_ANNOUNCEMENTS_ENABLED=false`.
 
-**Filament hosts** (the common case): when Filament is installed, the notices are **auto-injected** as a banner into every panel page via a render hook - nothing to place. Move the spot with `NOTIFIER_ANNOUNCEMENTS_FILAMENT_HOOK` (default `panels::content.start`; also `panels::body.start`, `panels::topbar.end`), or turn the auto-injection off with `NOTIFIER_ANNOUNCEMENTS_FILAMENT=false`. Works across Filament v3/v4/v5.
+**Filament hosts** (the common case): when Filament is installed, the notices are **auto-injected** as a banner into every panel page via a render hook - nothing to place. Move the default spot with `NOTIFIER_ANNOUNCEMENTS_FILAMENT_HOOK` (default `panels::content.start`; also `panels::body.start`, `panels::topbar.end`), or turn the auto-injection off with `NOTIFIER_ANNOUNCEMENTS_FILAMENT=false`. Works across Filament v3/v4/v5.
+
+**Per-announcement placement:** each announcement carries a `target` from the control plane. A Filament announcement is routed to the render hook named in its `target`; with no `target` it falls to the default hook above. The package only injects at the hooks you opt into, so to support more than one position list them all (comma-separated) in `NOTIFIER_ANNOUNCEMENTS_RENDER_HOOKS` - the default hook is always included:
+
+```bash
+NOTIFIER_ANNOUNCEMENTS_RENDER_HOOKS="panels::content.start,panels::topbar.end"
+```
+
+Existing setups need no change: with no `target` (or older servers) every announcement keeps rendering at the default hook exactly as before.
 
 **Blade hosts:** drop the component anywhere:
 
@@ -95,11 +103,16 @@ Pull this site's maintenance/announcement notices from the central server and sh
 <x-notifier-announcements-notice />
 ```
 
-**Inertia / Vue / React hosts:** the service is framework-agnostic - render it yourself:
+**Inertia / Vue / React (custom SPA) hosts:** the service is framework-agnostic - render it yourself. Announcements aimed at a custom dashboard arrive with `dashboard_type` `custom` and a `target` DOM element id; fetch just those and mount each at its `target`:
 
 ```php
+// All active announcements (any dashboard_type):
 app(\Devuni\Notifier\Services\AnnouncementsService::class)->activeAnnouncements();
-// e.g. share as an Inertia prop, then render it in your own component.
+
+// Only the custom (SPA) ones, optionally for a single element id:
+app(\Devuni\Notifier\Services\AnnouncementsService::class)->customAnnouncements();
+app(\Devuni\Notifier\Services\AnnouncementsService::class)->customAnnouncements('spa-banner');
+// e.g. share as an Inertia prop, then render each item into the element named by its 'target'.
 ```
 
 Requests are **per-repository** and reuse your existing `NOTIFIER_URL` + `X-Notifier-Token` (`GET {NOTIFIER_URL}/announcements`), so the server returns only this site's announcements - no other repositories are disclosed. Responses are cached (`NOTIFIER_ANNOUNCEMENTS_CACHE_TTL`, default 900 s) so the dashboard never blocks on a live request, and any fetch failure renders nothing rather than breaking your dashboard. Customize the Blade markup with `vendor:publish --tag="notifier-views"`.

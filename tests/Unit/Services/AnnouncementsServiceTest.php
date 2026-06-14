@@ -102,6 +102,81 @@ describe('AnnouncementsService::activeAnnouncements', function () {
     });
 });
 
+describe('AnnouncementsService placement normalization', function () {
+    it('defaults dashboard_type to filament and target to null on older payloads', function () {
+        Http::fake([
+            '*/announcements' => Http::response([
+                'announcements' => [
+                    ['content' => 'Old server payload.', 'severity' => 'info'],
+                ],
+            ], 200),
+        ]);
+
+        $announcements = announcementsService()->activeAnnouncements();
+
+        expect($announcements[0]['dashboard_type'])->toBe('filament')
+            ->and($announcements[0]['target'])->toBeNull();
+    });
+
+    it('passes the wire dashboard_type and target through intact', function () {
+        Http::fake([
+            '*/announcements' => Http::response([
+                'announcements' => [
+                    ['content' => 'Targeted.', 'severity' => 'info', 'dashboard_type' => 'custom', 'target' => 'spa-banner'],
+                ],
+            ], 200),
+        ]);
+
+        $announcements = announcementsService()->activeAnnouncements();
+
+        expect($announcements[0]['dashboard_type'])->toBe('custom')
+            ->and($announcements[0]['target'])->toBe('spa-banner');
+    });
+});
+
+describe('AnnouncementsService::customAnnouncements', function () {
+    it('returns only announcements whose dashboard_type is custom', function () {
+        Http::fake([
+            '*/announcements' => Http::response([
+                'announcements' => [
+                    ['content' => 'Filament one.', 'severity' => 'info'],
+                    ['content' => 'Custom one.', 'severity' => 'info', 'dashboard_type' => 'custom', 'target' => 'spa-banner'],
+                    ['content' => 'Filament two.', 'severity' => 'info', 'dashboard_type' => 'filament'],
+                ],
+            ], 200),
+        ]);
+
+        $custom = announcementsService()->customAnnouncements();
+
+        expect($custom)->toHaveCount(1)
+            ->and($custom[0]['content'])->toBe('Custom one.');
+    });
+
+    it('narrows to a single target element id when one is given', function () {
+        Http::fake([
+            '*/announcements' => Http::response([
+                'announcements' => [
+                    ['content' => 'Banner.', 'severity' => 'info', 'dashboard_type' => 'custom', 'target' => 'spa-banner'],
+                    ['content' => 'Sidebar.', 'severity' => 'info', 'dashboard_type' => 'custom', 'target' => 'spa-sidebar'],
+                ],
+            ], 200),
+        ]);
+
+        $custom = announcementsService()->customAnnouncements('spa-sidebar');
+
+        expect($custom)->toHaveCount(1)
+            ->and($custom[0]['content'])->toBe('Sidebar.');
+    });
+
+    it('returns an empty list (and does not throw) when the feature is disabled', function () {
+        config(['notifier.features.announcements' => false]);
+        Http::fake(['*' => Http::response(['announcements' => [['content' => 'x', 'dashboard_type' => 'custom']]], 200)]);
+
+        expect(announcementsService()->customAnnouncements())->toBe([]);
+        Http::assertNothingSent();
+    });
+});
+
 describe('AnnouncementsService::repositoryId', function () {
     it('parses the repository id from the configured NOTIFIER_URL', function () {
         expect(announcementsService()->repositoryId())->toBe('52740614');

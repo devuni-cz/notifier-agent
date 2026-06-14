@@ -4,7 +4,8 @@
         "tests/TestCase.php",
         "tests/Filament/AnnouncementsHookEnabledTestCase.php",
         "tests/Filament/AnnouncementsFeatureDisabledTestCase.php",
-        "tests/Filament/AnnouncementsFilamentDisabledTestCase.php"
+        "tests/Filament/AnnouncementsFilamentDisabledTestCase.php",
+        "tests/Filament/AnnouncementsMultiHookTestCase.php"
     ],
     "rules": {
         "array_push": true,
