@@ -5,6 +5,12 @@ All notable changes to `devuni/notifier-agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-06-15
+
+### Added
+
+-   **Validity-window line in the announcement banner.** Each announcement now renders a muted sub-line showing the period it applies — **`Platí: {od} – {do}`** when the server sends both bounds, or **`Platí od {od} (do odvolání)`** when it is open-ended. The window comes from the wire `starts_at` / `ends_at`; `published_at` is only the publish gate and is never shown. Times are converted to the **host app timezone** (`config('app.timezone')`) and formatted **absolutely** (`j. n. Y H:i`, e.g. `13. 6. 2026 23:12`) so the value is safe to cache for the 15-minute announcement TTL without going stale. The label is derived once at fetch time (`validity_label`, fail-soft — a malformed date is logged and the line is simply omitted) and renders in both the Filament render-hook banner and the `<x-notifier-announcements-notice />` Blade component. Announcements without a start date render exactly as before.
+
 ## [1.3.0] - 2026-06-14
 
 ### Added
@@ -84,7 +90,9 @@ The first official release of **`devuni/notifier-agent`** — the client agent o
 -   The PHP namespace is **`Devuni\Notifier\`** and the env surface uses the established `NOTIFIER_*` keys.
 -   Built on the codebase previously published as `devuni/notifier-package` (2.x). That package is superseded by this one: its `v2.8.0` is the terminal release and all further development happens here. Migration is a one-step `composer remove devuni/notifier-package && composer require devuni/notifier-agent`.
 
-[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/devuni-cz/notifier-agent/compare/v1.0.1...v1.0.2

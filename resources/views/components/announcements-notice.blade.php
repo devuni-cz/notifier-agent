@@ -12,6 +12,9 @@
                     @if ($type?->getLabel())
                         <span class="notifier-announcement__type">{{ $type->getLabel() }}</span>
                     @endif{{ $content }}
+                    @if (! empty($announcement['validity_label']))
+                        <span class="notifier-announcement__validity">{{ $announcement['validity_label'] }}</span>
+                    @endif
                 </div>
             @endif
         @endforeach

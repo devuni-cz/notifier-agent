@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Devuni\Notifier\Services;
 
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Throwable;
 
@@ -21,6 +22,12 @@ use Throwable;
  */
 final class AnnouncementsService
 {
+    /**
+     * Item key carrying the display-ready validity window line (string|null),
+     * computed once at fetch time and cached with the item so the views stay dumb.
+     */
+    public const VALIDITY_LABEL_KEY = 'validity_label';
+
     public function __construct(
         private readonly NotifierApiClient $api,
         private readonly NotifierLoggerService $notifierLogger,
@@ -123,13 +130,29 @@ final class AnnouncementsService
         $announcements = $response->json('announcements');
 
         $announcements = is_array($announcements)
-            ? array_values(array_map($this->normalizePlacement(...), $announcements))
+            ? array_values(array_map($this->normalizeAnnouncement(...), $announcements))
             : [];
 
         Cache::put($cacheKey, $announcements, (int) config('notifier.announcements.cache_ttl', 900));
 
         /** @var list<array<string, mixed>> $announcements */
         return $announcements;
+    }
+
+    /**
+     * Enrich a wire item with the derived, display-ready keys, computed once here
+     * so they are cached with the item and the views stay dumb: placement defaults
+     * (`dashboard_type`/`target`) and the human-readable validity-window line.
+     *
+     * @param  array<string, mixed>  $announcement
+     * @return array<string, mixed>
+     */
+    private function normalizeAnnouncement(array $announcement): array
+    {
+        $announcement = $this->normalizePlacement($announcement);
+        $announcement[self::VALIDITY_LABEL_KEY] = $this->validityLabel($announcement);
+
+        return $announcement;
     }
 
     /**
@@ -150,6 +173,53 @@ final class AnnouncementsService
         $announcement['target'] = $target !== '' ? $target : null;
 
         return $announcement;
+    }
+
+    /**
+     * Build the display-ready validity-window line for an announcement, in the
+     * HOST app timezone, using an ABSOLUTE format ("j. n. Y H:i") so the cached
+     * value never goes stale (unlike diffForHumans). `starts_at` is the period the
+     * announcement applies from; `published_at` is only the publish gate and is
+     * never shown here.
+     *
+     * - both dates present  -> "Platí: {start} – {end}"   (en-dash)
+     * - `ends_at` null/empty -> "Platí od {start} (do odvolání)"
+     * - `starts_at` missing/unparseable -> null (the view omits the line)
+     *
+     * Parsing is fail-soft: a malformed date never throws — it is logged and the
+     * method returns null, consistent with the rest of this service.
+     *
+     * @param  array<string, mixed>  $announcement
+     */
+    private function validityLabel(array $announcement): ?string
+    {
+        $startsAtRaw = mb_trim((string) ($announcement['starts_at'] ?? ''));
+
+        if ($startsAtRaw === '') {
+            return null;
+        }
+
+        $timezone = (string) config('app.timezone', 'UTC');
+
+        try {
+            $start = Carbon::parse($startsAtRaw)->setTimezone($timezone)->format('j. n. Y H:i');
+
+            $endsAtRaw = mb_trim((string) ($announcement['ends_at'] ?? ''));
+
+            if ($endsAtRaw === '') {
+                return 'Platí od '.$start.' (do odvolání)';
+            }
+
+            $end = Carbon::parse($endsAtRaw)->setTimezone($timezone)->format('j. n. Y H:i');
+
+            return 'Platí: '.$start.' – '.$end;
+        } catch (Throwable $e) {
+            $this->notifierLogger->get()->warning('⚠️ failed to build notifier announcement validity label', [
+                'reason' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     /**

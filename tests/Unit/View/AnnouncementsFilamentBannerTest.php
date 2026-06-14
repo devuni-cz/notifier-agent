@@ -61,6 +61,37 @@ describe('notifier::filament.announcements', function () {
         expect($rendered)->not->toContain('<span class="notifier-announcement__type">');
     });
 
+    it('renders the validity-window sub-line when validity_label is present', function () {
+        $rendered = view('notifier::filament.announcements', [
+            'announcements' => [
+                [
+                    'content' => 'Plánovaná údržba.',
+                    'severity' => 'high',
+                    'validity_label' => 'Platí: 13. 6. 2026 23:12 – 14. 6. 2026 06:00',
+                ],
+            ],
+        ])->render();
+
+        // Assert the sub-line ELEMENT, not the bare class (which always exists in
+        // the inline <style> CSS rule).
+        expect($rendered)
+            ->toContain('<span class="notifier-announcement__validity">')
+            ->toContain('Platí: 13. 6. 2026 23:12 – 14. 6. 2026 06:00');
+    });
+
+    it('omits the validity sub-line element when validity_label is null or absent', function () {
+        $rendered = view('notifier::filament.announcements', [
+            'announcements' => [
+                ['content' => 'No window.', 'severity' => 'info', 'validity_label' => null],
+                ['content' => 'No key at all.', 'severity' => 'info'],
+            ],
+        ])->render();
+
+        // The CSS rule for the class always lives in the inline <style>; what must
+        // not render without a validity_label is the sub-line ELEMENT itself.
+        expect($rendered)->not->toContain('<span class="notifier-announcement__validity">');
+    });
+
     it('exposes the announcement id as a data attribute when present', function () {
         $rendered = view('notifier::filament.announcements', [
             'announcements' => [
