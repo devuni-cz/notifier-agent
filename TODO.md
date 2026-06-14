@@ -46,7 +46,8 @@ v1.0.2 (security: throttle-před-token, pre-auth 403 unifikace, dump chmod 0600 
 
 ## 🔭 Roadmap (probráno, nepostaveno)
 
-- [ ] **Heartbeat/identity manifest** — agent reportuje liveness + identitu do control plane (přirozený nosič: `NotifierApiClient`). Největší mezera.
+- [x] **Heartbeat/identity manifest (v1.3.0, server !111)** — `HeartbeatService` + `notifier:heartbeat` POSTuje manifest (verze, php/laravel, queue_connection, enabled_features, disk free/total, last db/storage backup, reported_at) na `/heartbeat`; push semantika (throws); host scheduluje hourly. Server: `RepositoryHeartbeat` (upsert, vlastní receipt time), Agent card na repo show, opt-in + once-guard stale alerting. **Scheduler/cron liveness je pokrytý implicitně** (příchod heartbeatu = scheduler žije).
+- [ ] **Heartbeat → extensible health-checks layer (budoucí increment)** — dnešní manifest je TYPOVANÝ (sloupcový), takže nový signál = migrace. Pro monitorování host infra (queue workeři/supervisor, systemd, cron-detail) přidat GENERICKÝ `checks` json bag: agent hlásí mapu pojmenovaných checků (`{queue:{status,detail}, supervisor:notifier-worker:{...}, systemd:redis:{...}}`), server uloží do JEDNOHO json sloupce (nový check = ŽÁDNÁ migrace), UI renderuje genericky, alerting per-check status. Na agentu pluggable `HealthCheck` interface (každý check = třída; config allowlist služeb). **Snadné+vysoko-hodnotné:** queue-depth/oldest-pending + scheduler-last-run (DB/cache, žádný shell). **Pozor:** supervisorctl = shell (jde-li web-user), `systemctl is-active` = obvykle potřebuje root → web-user nemusí smět. (Probráno 2026-06-15, odloženo.)
 - [ ] **Backup restore-verifiability** — dokázat, že shippnutá šifrovaná záloha se dešifruje a dump obnoví.
 - [ ] Thin WARNING+ log shipper do control plane (level filtering + rate/volume control).
-- [ ] Capability-kernel refactor (formalizovat backups/announcements za společný registry) — prerekvizita pro heartbeat manifest.
+- [ ] Capability-kernel refactor (formalizovat backups/announcements za společný registry).
