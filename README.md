@@ -73,7 +73,7 @@ php artisan notifier:storage-backup
 
 ### HTTP API
 
-Trigger backups from an external scheduler. Rate-limited to 10 req/min.
+Trigger backups from an external scheduler. Rate-limited to 10 req/hour.
 
 ```bash
 curl -X POST https://your-app.com/api/notifier/backup \
