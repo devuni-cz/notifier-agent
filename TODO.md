@@ -1,49 +1,52 @@
 # TODO — devuni/notifier-agent
 
-> Vygenerováno z multi-agentní analýzy 2026-06-11 (stav: v1.0.1, main == origin/main).
-> Priorita: 🔴 critical/high · 🟠 medium · 🟡 low/nice-to-have · ✅ ověřeno jako hotové (kontext).
-> Reference jsou `soubor:řádek` vůči stavu při analýze — před zásahem ověřit, kód se mohl pohnout.
+> Backlog z multi-agentního auditu 2026-06-14 (dedup + ověřeno proti kódu). Stav: v1.1.0.
+> Priorita: 🔴 critical · 🟠 high/medium · 🟡 low · ✅ hotovo.
+> Reference `soubor:řádek` vůči stavu při auditu — před zásahem ověřit.
 
-## 🔴 Bezpečnost
+## ✅ Hotovo
 
-- [x] ~~**Rate-limitovat neúspěšné pokusy o token na příchozím `/backup` endpointu.**~~ — v1.0.2: throttle běží před ověřením tokenu (limit 10/hod beze změny) + test na 429 při wrong-token floodu.
-- [x] ~~**Plaintext `.sql` dump na disku.**~~ — v1.0.2: `@chmod 0600` hned po dumpu (Windows no-op) + `try/finally` kolem zipování, dump se smaže i při selhání ZIPu; pokryto testem.
-- [x] ~~**Endpoint před autentizací prozrazuje konfiguraci.**~~ — v1.0.2: chybějící token / špatný token / rozbitá konfigurace = identická generická 403; skutečný důvod (vč. IP volajícího) jde do logu.
-- [x] ~~**`notifier:install` zapisuje tajemství do `.env` bez escapování.**~~ — v1.0.2: hodnoty se escapují (backslash + uvozovka), `--force` replace přes `preg_replace_callback` (jinak by escapované hodnoty mrzačil); testy vč. round-trip přes Dotenv::parse.
-- [ ] 🟡 **ZIP nešifruje názvy souborů uvnitř archivu** (obsah je AES-256, filenames ne). Zvážit, zda metadata souborů nejsou citlivá.
+v1.0.2 (security: throttle-před-token, pre-auth 403 unifikace, dump chmod 0600 + cleanup, `.env` escapování) · v1.1.0 (announcement types `maintenance/outage/release/notice` + chip rendering + `data-announcement-id` groundwork; eslint-style enum). Server↔klient kontrakt end-to-end konzistentní.
 
-## 🔴 Release / packaging
+---
 
-- [ ] **Označit starý `devuni/notifier-package` na Packagistu jako `abandoned`** (s náhradou `devuni/notifier-agent`) a **archivovat starý GitHub repo.** Jinak konzumenti dál instalují/aktualizují mrtvou linii. (Akce mimo tento repo, ale patří sem jako tracking.)
-- [ ] **Doplnit `conflict` i pro pomyslnou cestu přes v1.0.0** / nebo zajistit, že nikdo neinstaluje `1.0.0` (conflict přidán až v 1.0.1, `1aedb1e`). Drobné — zvážit yank v1.0.0 nebo nechat být.
-- [ ] **Tvrdý filtr tagů přímo v `release.yml`.** Dnes jediná bariéra proti publikaci starých `v2*/v3*` tagů je GitHub ruleset (id 17493897); `release.yml` se spustí na JAKÝKOLI `v*`. Přidat do workflow guard na povolený rozsah verzí (defense-in-depth). — `.github/workflows/release.yml`
+## 🟠 Testy (iluzorní pokrytí)
 
-## 🟠 Testy / CI
+- [ ] **33 trvale skipnutých command testů** — `NotifierInstallCommandTest` 15/15, `StorageBackupCommandTest` 11/16, `DatabaseBackupCommandTest` 7/10. Command pokrytí je iluze; `.env`-writer/escaping má reálný test jen v `NotifierInstallCommandEscapingTest`. Skipy nahradit reálnými testy nebo odstranit.
+- [ ] **Filament render-hook auto-injekce netestovaná** (vlajková on-by-default feature) — `AnnouncementsFilamentBannerTest` renderuje view přímo, nikdy nevolá `FilamentView::registerRenderHook` v `NotifierServiceProvider`. Navíc `filament/*` chybí v `require-dev`. Přidat dep + behaviorální test.
+- [ ] 🟠 `ProcessBackupJob` (timeout 900s, tries 1) + `NOTIFIER_QUEUE_CONNECTION` dispatch větev v `NotifierSendBackupController` — 0 pokrytí.
+- [ ] 🟡 ZIP creators (`CliZipCreator` 7z + `PhpZipCreator`) bez behaviorálních testů; `NotifierStorageServiceTest` je tautologický → otestovat reálnou tvorbu AES-256 šifrovaného archivu (jádro backup garance).
+- [ ] 🟡 Přidat `Http::preventStrayRequests()` do HTTP testů; protrhat tautologický `NotifierServiceProviderTest`.
 
-- [ ] **Filament auto-injekce announcements je netestovaná** — Filament není v `require-dev`, render hook `panels::content.start` se v testech nikdy nevykoná, přitom je to vlajková funkce ON by default. Přidat `filament/filament` do dev závislostí a behaviorální test injekce banneru.
-- [ ] **40 z ~240 testů je trvale skipnutých** (install command 15/15, storage-backup 11/16) → pokrytí commandů je z velké části iluzorní. Doplnit reálné testy nebo skipy odstranit/odůvodnit. — `tests/`
-- [ ] **`ProcessBackupJob` a queue-dispatch větev controlleru nemají žádný test** (timeout 900 s, tries 1).
-- [ ] **CI matice testuje jen PHP 8.4 + Laravel 12**, ačkoli balíček deklaruje i L13 a lokálně se na L13 vyvíjí (L13 se ověří až release gate při tagu). Přidat L13 do průběžné push/PR matice; přidat i L12 lokálně. — `.github/workflows/ci.yml`
-- [ ] 🟡 **`NotifierStorageServiceTest` je převážně tautologický**; ZIP creatory (7z CLI / PHP ZipArchive) nemají behaviorální test.
-- [ ] 🟡 **Testovací hygiena:** doplnit `Http::preventStrayRequests()`, pročistit vatu v `NotifierServiceProviderTest`.
-- [ ] 🟡 **Rector je nakonfigurován, ale CI ho nikdy nespouští** — přidat krok, nebo přiznat, že je jen lokální. — `rector.php`
+## 🟠 CI / release
 
-## 🟠 Statická analýza
+- [ ] **CI matrix má jediný entry** (php 8.4 / laravel 12.*) — composer povoluje `illuminate ^12||^13.14`, dev jede na L13, ale L13 se validuje až na release gate. Přidat L13 (a druhou PHP verzi) do push/PR CI.
+- [ ] 🟠 `release.yml` triggeruje na jakýkoliv `v*` tag a publikuje non-draft i když `CHANGELOG.md` nemá odpovídající sekci. Přidat guard (fail při chybějící sekci) + tag-range guard.
+- [ ] 🟡 `version-bump.yml` pushuje přímo na `main` přes `GITHUB_TOKEN` a `code-style-fix.yml` auto-commituje na `github.head_ref` s `contents:write` na `pull_request` (fork-PR privilege-escalation surface). Ověřit branch-protection / omezit na same-repo PR.
+- [ ] 🟡 Rector: pustit v CI nebo zdokumentovat jako local-only (nakonfigurovaný, ale CI ho nikdy nevolá).
 
-- [ ] **PHPStan zpřísnit nad level 5** (běží bez baseline a s čistými ignoreErrors — dobrá výchozí pozice pro posun na level 6+). — `phpstan.neon`
+## 🟡 Dokumentace / drobnosti
 
-## 🟡 Konzistence / dokumentace
+- [ ] **`SECURITY.md` má prohozené verze** (ř. 7–11) — deklaruje 2.x supported / 1.x unsupported; reálně je to v1.0.0–v1.1.0 (2.x patří superseded `notifier-package`). Opravit.
+- [ ] `README.md:76` tvrdí „Rate-limited to 10 req/min", ale `routes/web.php:16` je `throttle:10,60` = **10/hod**. Opravit doc.
+- [ ] Přepsat stale `VERSION_MANAGEMENT.md` (boilerplate o registraci na packagist/webhook neodpovídá realitě).
+- [ ] 🟡 Divergentní announcements fallback literály: config `features.announcements` default true vs `AnnouncementsService.php:36` default false; `failure_cache_ttl` 300 vs fallback 60 (neškodné přes `mergeConfigFrom`, ale matoucí). Sjednotit.
+- [ ] 🟡 Ověřit, že Filament hook `panels::content.start` je platný v majoru Filamentu nasazeném v klientských appkách (přesunutý hook = banner tiše nerenderuje).
+- [ ] 🟡 Ověřit sync `AnnouncementTypeEnum` se serverem + graceful degrade na `tryFrom` (žádný chip pro NOTICE/neznámé).
+- [ ] 🟡 Raise PHPStan nad level 5 (teď level 5 clean, bez baseline/ignores) — dobrý odrazový bod pro 6+.
 
-- [ ] **Sjednotit fallback defaulty `announcements` mezi kódem a configem.** `failure_cache_ttl` 300 (config) vs. 60 (kód), `features.announcements` true (config) vs. false (kód). Efektivně neškodné díky `mergeConfigFrom`, ale matoucí. — `src/Services/AnnouncementsService.php:36,119` vs `config/notifier.php:218,239`
-- [ ] **Aktualizovat `SECURITY.md`** — deklaruje neexistující podporovanou řadu 2.x, aktuální tagy jsou v1.0.x.
-- [ ] **Sjednotit dokumentaci throttle limitu.** README tvrdí „10 req/min", kód má `throttle:10,60` (= 10/hod). — `routes/web.php` vs `README.md`
-- [ ] 🟡 **`VERSION_MANAGEMENT.md`** je generický boilerplate s drobně zastaralou sekcí o registraci na Packagist — sladit s realitou.
+## 🟡 ZIP / backup
 
-## ✅ Ověřeno jako vyřešené (jen kontext, neřešit)
+- [ ] 🟡 ZIP šifruje obsah (AES-256), ale **ne názvy souborů** v central directory. Rozhodnout, zda jsou path metadata citlivá (`7z -mhe=on` umí, PHP `ZipArchive` ne).
 
-- ✅ composer `conflict` na `devuni/notifier-package:*` **existuje** (od v1.0.1, `1aedb1e`) — kolize tříd vyřešena.
-- ✅ tag hazard mitigován GitHub rulesetem (`v2*`/`v3*` blokované).
-- ✅ HTTP transport zatvrzený: HTTPS-only, `allow_redirects=false`, origin-pinning `status_url`.
-- ✅ DB hesla přes env (`MYSQL_PWD`/`PGPASSWORD`), ne argv; ZIP heslo přes stdin.
-- ✅ Announcements obsah ze serveru je v Blade vždy escapovaný (`{{ }}`) — XSS nehrozí.
-- ✅ Zpětná kompatibilita env jmen zachována (všech 9 klíčů + legacy `BACKUP_*` fallbacky).
+## 📦 Packaging (cross-cutting s notifier-package)
+
+- [ ] **Označit `devuni/notifier-package` jako `abandoned`** na Packagistu (replacement `devuni/notifier-agent`) + archiv GitHub repa — jeho `composer.json` nemá `abandoned` klíč, konzumenti dál updatují mrtvou 2.x linii.
+- [ ] 🟡 Rozhodnout o `v1.0.0` (yank vs nechat): `conflict` proti notifier-package byl přidán až ve `v1.0.1`, takže konzument pinnutý přesně na `v1.0.0` může nainstalovat oba balíčky a rozbít resolving sdíleného namespace.
+
+## 🔭 Roadmap (probráno, nepostaveno)
+
+- [ ] **Heartbeat/identity manifest** — agent reportuje liveness + identitu do control plane (přirozený nosič: `NotifierApiClient`). Největší mezera.
+- [ ] **Backup restore-verifiability** — dokázat, že shippnutá šifrovaná záloha se dešifruje a dump obnoví.
+- [ ] Thin WARNING+ log shipper do control plane (level filtering + rate/volume control).
+- [ ] Capability-kernel refactor (formalizovat backups/announcements za společný registry) — prerekvizita pro heartbeat manifest.
