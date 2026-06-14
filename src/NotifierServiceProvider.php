@@ -6,6 +6,7 @@ namespace Devuni\Notifier;
 
 use Devuni\Notifier\Commands\NotifierCheckCommand;
 use Devuni\Notifier\Commands\NotifierDatabaseBackupCommand;
+use Devuni\Notifier\Commands\NotifierHeartbeatCommand;
 use Devuni\Notifier\Commands\NotifierInstallCommand;
 use Devuni\Notifier\Commands\NotifierStorageBackupCommand;
 use Devuni\Notifier\Interfaces\DatabaseDumperInterface;
@@ -14,6 +15,7 @@ use Devuni\Notifier\Services\AnnouncementsService;
 use Devuni\Notifier\Services\ChunkedUploadService;
 use Devuni\Notifier\Services\Database\MysqlDumper;
 use Devuni\Notifier\Services\Database\PostgresDumper;
+use Devuni\Notifier\Services\HeartbeatService;
 use Devuni\Notifier\Services\NotifierApiClient;
 use Devuni\Notifier\Services\NotifierConfigService;
 use Devuni\Notifier\Services\NotifierDatabaseService;
@@ -43,6 +45,7 @@ final class NotifierServiceProvider extends ServiceProvider
         $this->app->singleton(NotifierDatabaseService::class);
         $this->app->singleton(NotifierStorageService::class);
         $this->app->singleton(AnnouncementsService::class);
+        $this->app->singleton(HeartbeatService::class);
 
         // Bind lazily: the actual dumper is resolved on first use, so unsupported
         // drivers (e.g. sqlite in test envs) don't blow up at container resolution
@@ -91,6 +94,7 @@ final class NotifierServiceProvider extends ServiceProvider
             $this->commands([
                 NotifierCheckCommand::class,
                 NotifierDatabaseBackupCommand::class,
+                NotifierHeartbeatCommand::class,
                 NotifierInstallCommand::class,
                 NotifierStorageBackupCommand::class,
             ]);

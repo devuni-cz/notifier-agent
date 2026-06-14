@@ -5,6 +5,15 @@ All notable changes to `devuni/notifier-agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-06-14
+
+### Added
+
+-   **Heartbeat / identity manifest.** A new `notifier:heartbeat` command pushes a periodic liveness + identity manifest to the control plane (`POST {NOTIFIER_URL}/heartbeat`, per-repository, same `X-Notifier-Token`), so the server can mark a site **stale after 6 h** of silence. **On by default**; the host app schedules it (recommended `Schedule::command('notifier:heartbeat')->hourly()->onOneServer()`). Disable with `NOTIFIER_HEARTBEAT_ENABLED=false` (the push becomes a no-op).
+    -   The manifest reports the **agent / PHP / Laravel versions**, the **queue connection**, the **enabled feature** map (announcements / backups / heartbeat), **free + total disk bytes** on the storage volume, the **last database & storage backup times**, and the agent's own clock (`reported_at`). The server stamps its own receipt time — the agent never sends it.
+    -   Unlike the fail-open announcements pull, the heartbeat is a **push**: a rejected or unreachable server is logged to the `backup` channel and makes the command exit non-zero, so a host scheduler's failure handling can react.
+-   **Last-backup timestamps recorded.** `notifier:database-backup` and `notifier:storage-backup` now record the time of each successful backup (cache keys `notifier.last_database_backup_at` / `notifier.last_storage_backup_at`), which the heartbeat manifest reports to the control plane.
+
 ## [1.2.0] - 2026-06-14
 
 ### Added

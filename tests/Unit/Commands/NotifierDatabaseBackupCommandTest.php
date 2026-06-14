@@ -6,8 +6,10 @@ use Devuni\Notifier\Commands\NotifierDatabaseBackupCommand;
 use Devuni\Notifier\Interfaces\DatabaseDumperInterface;
 use Devuni\Notifier\Interfaces\ZipCreatorInterface;
 use Devuni\Notifier\Services\ChunkedUploadService;
+use Devuni\Notifier\Services\HeartbeatService;
 use Devuni\Notifier\Services\NotifierDatabaseService;
 use Devuni\Notifier\Services\NotifierLoggerService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 
@@ -142,6 +144,15 @@ describe('NotifierDatabaseBackupCommand', function () {
 
             expect(fn () => $this->artisan('notifier:database-backup'))
                 ->toThrow(RuntimeException::class, 'SQL dump file was not created');
+        });
+
+        it('records the last database backup time for the heartbeat manifest on success', function () {
+            Cache::forget(HeartbeatService::LAST_DATABASE_BACKUP_KEY);
+            bindFakeDatabaseService();
+
+            $this->artisan('notifier:database-backup')->assertExitCode(0);
+
+            expect(Cache::get(HeartbeatService::LAST_DATABASE_BACKUP_KEY))->toBeString();
         });
     });
 
