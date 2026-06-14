@@ -24,6 +24,12 @@ jobs:
             laravel: '12.*'
             testbench: '^10.0'
             coverage: true
+          - php: '8.4'
+            laravel: '13.*'
+            testbench: '^11.0'
+          - php: '8.5'
+            laravel: '13.*'
+            testbench: '^11.0'
 
     steps:
       - uses: actions/checkout@v6
@@ -55,7 +61,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-results-php${{ matrix.php }}-laravel${{ matrix.laravel == '12.*' && '12' || matrix.laravel }}
+          name: test-results-php${{ matrix.php }}-laravel${{ matrix.laravel == '12.*' && '12' || matrix.laravel == '13.*' && '13' || matrix.laravel }}
           path: build/report.junit.xml
           retention-days: 7
 

@@ -6,8 +6,7 @@ We actively support the following versions of this package:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 2.x     | :white_check_mark: |
-| 1.x     | :x:                |
+| 1.x     | :white_check_mark: |
 | < 1.0   | :x:                |
 
 ## Reporting a Vulnerability
