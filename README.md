@@ -117,6 +117,26 @@ app(\Devuni\Notifier\Services\AnnouncementsService::class)->customAnnouncements(
 
 Requests are **per-repository** and reuse your existing `NOTIFIER_URL` + `X-Notifier-Token` (`GET {NOTIFIER_URL}/announcements`), so the server returns only this site's announcements - no other repositories are disclosed. Responses are cached (`NOTIFIER_ANNOUNCEMENTS_CACHE_TTL`, default 900 s) so the dashboard never blocks on a live request, and any fetch failure renders nothing rather than breaking your dashboard. Customize the Blade markup with `vendor:publish --tag="notifier-views"`.
 
+### Heartbeat
+
+Tell the control plane this site is alive and report its identity. **On by default** - schedule the command and the server knows the agent is running; the server marks an agent **stale after 6 h** of silence, so the operator sees when a site stops checking in. Disable with `NOTIFIER_HEARTBEAT_ENABLED=false` (the push becomes a no-op).
+
+The host app schedules it - **hourly** is the recommended cadence (comfortably inside the 6 h stale window):
+
+```php
+use Illuminate\Support\Facades\Schedule;
+
+Schedule::command('notifier:heartbeat')->hourly()->onOneServer();
+```
+
+Or run it on demand:
+
+```bash
+php artisan notifier:heartbeat
+```
+
+Each heartbeat `POST {NOTIFIER_URL}/heartbeat` (per-repository, same `X-Notifier-Token`) reports an identity + liveness manifest: the **agent / PHP / Laravel versions**, the **queue connection**, which **features** are enabled (announcements, backups, heartbeat), **free + total disk bytes** on the storage volume, the **last database & storage backup times** (recorded automatically when `notifier:database-backup` / `notifier:storage-backup` succeed), and the agent's own clock (`reported_at`). The server stamps its own receipt time - the agent never sends that. Unlike announcements, the heartbeat is a **push**: a rejected or unreachable server makes the command exit non-zero (and log to the `backup` channel), so your scheduler's failure handling can react.
+
 ## Configure
 
 Minimum `.env`:
@@ -127,7 +147,7 @@ NOTIFIER_URL=https://notifier.devuni.cz/api/v1/repositories/123 # your endpoint
 NOTIFIER_BACKUP_PASSWORD=...                                    # ZIP password
 ```
 
-Optional: `NOTIFIER_LOGGING_CHANNEL`, `NOTIFIER_ROUTES_ENABLED`, `NOTIFIER_ROUTE_PREFIX`, `NOTIFIER_ZIP_STRATEGY` (`auto`/`cli`/`php`), `NOTIFIER_CHUNK_SIZE`, `NOTIFIER_QUEUE_CONNECTION`, `NOTIFIER_DATABASE_CONNECTION`, `NOTIFIER_POSTGRES_DUMP_BINARY`, `NOTIFIER_POSTGRES_SCHEMA`. See [`config/notifier.php`](config/notifier.php) for defaults and descriptions.
+Optional: `NOTIFIER_LOGGING_CHANNEL`, `NOTIFIER_ROUTES_ENABLED`, `NOTIFIER_ROUTE_PREFIX`, `NOTIFIER_ZIP_STRATEGY` (`auto`/`cli`/`php`), `NOTIFIER_CHUNK_SIZE`, `NOTIFIER_QUEUE_CONNECTION`, `NOTIFIER_DATABASE_CONNECTION`, `NOTIFIER_POSTGRES_DUMP_BINARY`, `NOTIFIER_POSTGRES_SCHEMA`, `NOTIFIER_HEARTBEAT_ENABLED`. See [`config/notifier.php`](config/notifier.php) for defaults and descriptions.
 
 ### Database engine
 

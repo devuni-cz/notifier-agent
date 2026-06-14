@@ -216,6 +216,13 @@ return [
         // Pull this site's maintenance/announcement notices from the central
         // server and expose them for rendering in your own dashboard.
         'announcements' => env('NOTIFIER_ANNOUNCEMENTS_ENABLED', true),
+
+        // Push a periodic identity + liveness manifest (agent/PHP/Laravel
+        // versions, disk space, last backup times) to the control plane via the
+        // `notifier:heartbeat` command, so the server can mark a site stale when
+        // it stops hearing from this agent. The host app schedules the command;
+        // set NOTIFIER_HEARTBEAT_ENABLED=false to turn the push into a no-op.
+        'heartbeat' => env('NOTIFIER_HEARTBEAT_ENABLED', true),
     ],
 
     /*

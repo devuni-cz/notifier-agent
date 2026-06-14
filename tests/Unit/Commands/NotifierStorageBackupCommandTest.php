@@ -5,8 +5,10 @@ declare(strict_types=1);
 use Devuni\Notifier\Commands\NotifierStorageBackupCommand;
 use Devuni\Notifier\Interfaces\ZipCreatorInterface;
 use Devuni\Notifier\Services\ChunkedUploadService;
+use Devuni\Notifier\Services\HeartbeatService;
 use Devuni\Notifier\Services\NotifierLoggerService;
 use Devuni\Notifier\Services\NotifierStorageService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -128,6 +130,15 @@ describe('NotifierStorageBackupCommand', function () {
 
             expect(fn () => $this->artisan('notifier:storage-backup'))
                 ->toThrow(RuntimeException::class, 'zip archiver exploded');
+        });
+
+        it('records the last storage backup time for the heartbeat manifest on success', function () {
+            Cache::forget(HeartbeatService::LAST_STORAGE_BACKUP_KEY);
+            bindFakeStorageService();
+
+            $this->artisan('notifier:storage-backup')->assertExitCode(0);
+
+            expect(Cache::get(HeartbeatService::LAST_STORAGE_BACKUP_KEY))->toBeString();
         });
     });
 
