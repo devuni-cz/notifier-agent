@@ -182,7 +182,7 @@ final class AnnouncementsService
      * announcement applies from; `published_at` is only the publish gate and is
      * never shown here.
      *
-     * - both dates present  -> "Platí: {start} – {end}"   (en-dash)
+     * - both dates present  -> "Platí: {start} - {end}"   (plain hyphen)
      * - `ends_at` null/empty -> "Platí od {start} (do odvolání)"
      * - `starts_at` missing/unparseable -> null (the view omits the line)
      *
@@ -212,7 +212,7 @@ final class AnnouncementsService
 
             $end = Carbon::parse($endsAtRaw)->setTimezone($timezone)->format('j. n. Y H:i');
 
-            return 'Platí: '.$start.' – '.$end;
+            return 'Platí: '.$start.' - '.$end;
         } catch (Throwable $e) {
             $this->notifierLogger->get()->warning('⚠️ failed to build notifier announcement validity label', [
                 'reason' => $e->getMessage(),

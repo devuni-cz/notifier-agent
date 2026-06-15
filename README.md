@@ -97,6 +97,8 @@ NOTIFIER_ANNOUNCEMENTS_RENDER_HOOKS="panels::content.start,panels::topbar.end"
 
 Existing setups need no change: with no `target` (or older servers) every announcement keeps rendering at the default hook exactly as before.
 
+**Banner cap:** each render location shows the top `NOTIFIER_ANNOUNCEMENTS_MAX_VISIBLE` announcements (default `5`, priority-ordered) plus a muted `+ N dalších oznámení` overflow line; set it to `0` for unlimited. Custom (SPA) hosts via `customAnnouncements()` always get the full list.
+
 **Blade hosts:** drop the component anywhere:
 
 ```blade

@@ -60,7 +60,7 @@ describe('<x-notifier-announcements-notice />', function () {
 
         $this->blade('<x-notifier-announcements-notice />')
             ->assertSee('notifier-announcement__validity', false)
-            ->assertSee('Platí: 13. 6. 2026 23:12 – 14. 6. 2026 06:00');
+            ->assertSee('Platí: 13. 6. 2026 23:12 - 14. 6. 2026 06:00');
     });
 
     it('omits the validity sub-line when the server sends no start date', function () {
@@ -92,5 +92,79 @@ describe('<x-notifier-announcements-notice />', function () {
 
         expect($rendered)->toBe('');
         Http::assertNothingSent();
+    });
+
+    describe('render cap', function () {
+        /**
+         * Fake the wire with $count priority-ordered announcements. The server
+         * already sorts by priority, so the view must keep the first N as-is.
+         */
+        function fakeNoticeAnnouncements(int $count): void
+        {
+            Http::fake([
+                '*/announcements' => Http::response([
+                    'announcements' => array_map(
+                        static fn (int $i): array => ['content' => "Oznámení {$i}.", 'severity' => 'info'],
+                        range(1, $count),
+                    ),
+                ], 200),
+            ]);
+        }
+
+        it('renders only the top-N and a "+ N dalších" line when over the cap', function () {
+            config(['notifier.announcements.max_visible' => 5]);
+            fakeNoticeAnnouncements(7);
+
+            $this->blade('<x-notifier-announcements-notice />')
+                ->assertSee('Oznámení 1.')
+                ->assertSee('Oznámení 5.')
+                ->assertDontSee('Oznámení 6.')
+                ->assertDontSee('Oznámení 7.')
+                ->assertSee('notifier-announcement__more', false)
+                ->assertSee('+ 2 dalších oznámení');
+        });
+
+        it('renders everything and no overflow line when at or under the cap', function () {
+            config(['notifier.announcements.max_visible' => 5]);
+            fakeNoticeAnnouncements(3);
+
+            $this->blade('<x-notifier-announcements-notice />')
+                ->assertSee('Oznámení 3.')
+                ->assertDontSee('notifier-announcement__more', false);
+        });
+
+        it('defaults the cap to 5 when the config key is absent', function () {
+            // Drop the key entirely (rewrite the array without it) so the view's own
+            // `config(..., 5)` default kicks in. Setting it to null would not - the
+            // key would still exist and config() would return that null.
+            $announcements = config('notifier.announcements');
+            unset($announcements['max_visible']);
+            config(['notifier.announcements' => $announcements]);
+            fakeNoticeAnnouncements(7);
+
+            $this->blade('<x-notifier-announcements-notice />')
+                ->assertSee('Oznámení 5.')
+                ->assertDontSee('Oznámení 6.')
+                ->assertSee('+ 2 dalších oznámení');
+        });
+
+        it('respects a custom cap value', function () {
+            config(['notifier.announcements.max_visible' => 2]);
+            fakeNoticeAnnouncements(7);
+
+            $this->blade('<x-notifier-announcements-notice />')
+                ->assertSee('Oznámení 2.')
+                ->assertDontSee('Oznámení 3.')
+                ->assertSee('+ 5 dalších oznámení');
+        });
+
+        it('renders all announcements with no overflow line when the cap is 0 (unlimited)', function () {
+            config(['notifier.announcements.max_visible' => 0]);
+            fakeNoticeAnnouncements(7);
+
+            $this->blade('<x-notifier-announcements-notice />')
+                ->assertSee('Oznámení 7.')
+                ->assertDontSee('notifier-announcement__more', false);
+        });
     });
 });
