@@ -248,6 +248,16 @@ return [
         // HTTP timeout (seconds) for the announcements request.
         'timeout' => (int) env('NOTIFIER_ANNOUNCEMENTS_TIMEOUT', 5),
 
+        // Caps how many announcement banners render at each location (the Filament
+        // render-hook banner and the <x-notifier-announcements-notice /> Blade
+        // component). The server returns ALL active announcements priority-ordered;
+        // each render point shows only the top-N (most important first) plus a muted
+        // "+ N dalších" overflow line, so a burst of notices can't bury the dashboard.
+        // 0 = unlimited (render every announcement). Does NOT affect
+        // AnnouncementsService::customAnnouncements() - SPA/custom hosts still get
+        // the full list and decide their own display.
+        'max_visible' => (int) env('NOTIFIER_ANNOUNCEMENTS_MAX_VISIBLE', 5),
+
         /*
         | Filament integration. When the host app uses Filament, the package can
         | auto-inject the active announcements as a banner into every panel page

@@ -178,7 +178,7 @@ describe('AnnouncementsService::customAnnouncements', function () {
 });
 
 describe('AnnouncementsService validity window', function () {
-    it('builds "Platí: start – end" in the host timezone with an absolute format when both dates are present', function () {
+    it('builds "Platí: start - end" in the host timezone with an absolute format when both dates are present', function () {
         // 21:12 UTC in June is 23:12 in Europe/Prague (UTC+2, DST). The wire is
         // UTC; the client must see its own local time, formatted absolutely so it
         // can be cached for 15 min without going stale.
@@ -199,7 +199,7 @@ describe('AnnouncementsService validity window', function () {
 
         $announcements = announcementsService()->activeAnnouncements();
 
-        expect($announcements[0]['validity_label'])->toBe('Platí: 13. 6. 2026 23:12 – 14. 6. 2026 06:00');
+        expect($announcements[0]['validity_label'])->toBe('Platí: 13. 6. 2026 23:12 - 14. 6. 2026 06:00');
     });
 
     it('builds "Platí od start (do odvolání)" when ends_at is null', function () {
@@ -308,7 +308,7 @@ describe('AnnouncementsService validity window', function () {
         Http::assertSentCount(1);
 
         expect($first[0]['validity_label'])
-            ->toBe('Platí: 13. 6. 2026 23:12 – 14. 6. 2026 06:00')
+            ->toBe('Platí: 13. 6. 2026 23:12 - 14. 6. 2026 06:00')
             ->and($second[0]['validity_label'])->toBe($first[0]['validity_label'])
             // Absolute, not a diffForHumans phrase.
             ->and($second[0]['validity_label'])->not->toContain('před')

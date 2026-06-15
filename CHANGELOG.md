@@ -5,6 +5,16 @@ All notable changes to `devuni/notifier-agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-06-15
+
+### Added
+
+-   **Configurable cap on rendered announcement banners** — `notifier.announcements.max_visible` (env `NOTIFIER_ANNOUNCEMENTS_MAX_VISIBLE`, default 5). Each render location (the Filament render-hook banner and the `<x-notifier-announcements-notice />` Blade component) shows the **top-N priority-ordered** announcements plus a muted **`+ N dalších oznámení`** overflow line; `0` = unlimited. SPA/custom hosts via `AnnouncementsService::customAnnouncements()` still receive **all** announcements and decide their own display.
+
+### Changed
+
+-   **Announcement validity-window separator is now a plain hyphen `-`** instead of an en-dash `–` (avoids mojibake/odd rendering).
+
 ## [1.4.0] - 2026-06-15
 
 ### Added
@@ -90,7 +100,8 @@ The first official release of **`devuni/notifier-agent`** — the client agent o
 -   The PHP namespace is **`Devuni\Notifier\`** and the env surface uses the established `NOTIFIER_*` keys.
 -   Built on the codebase previously published as `devuni/notifier-package` (2.x). That package is superseded by this one: its `v2.8.0` is the terminal release and all further development happens here. Migration is a one-step `composer remove devuni/notifier-package && composer require devuni/notifier-agent`.
 
-[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/devuni-cz/notifier-agent/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.1.0...v1.2.0

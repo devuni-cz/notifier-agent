@@ -44,7 +44,7 @@ it('renders the validity-window line in the banner when the server sends start/e
     expect((string) FilamentView::renderHook('panels::content.start'))
         ->toContain('Plánovaná údržba v neděli 22:00.')
         ->toContain('<span class="notifier-announcement__validity">')
-        ->toContain('Platí: 13. 6. 2026 23:12 – 14. 6. 2026 06:00');
+        ->toContain('Platí: 13. 6. 2026 23:12 - 14. 6. 2026 06:00');
 });
 
 it('omits the validity line in the banner when the announcement has no start date', function () {
