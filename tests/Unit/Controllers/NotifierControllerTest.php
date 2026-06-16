@@ -75,6 +75,35 @@ describe('NotifierSendBackupController', function () {
         });
     });
 
+    describe('trigger secret split', function () {
+        it('accepts the trigger secret and rejects the backup code when the two differ', function () {
+            Config::set('notifier.backup_code', 'backup-code-value');
+            Config::set('notifier.trigger_secret', 'trigger-secret-value');
+
+            // Inbound triggers authenticate against the trigger secret...
+            $accepted = $this->postJson('/api/notifier/backup', ['type' => 'backup_database'], [
+                'X-Notifier-Token' => 'trigger-secret-value',
+            ]);
+            expect($accepted->status())->not->toBe(403);
+
+            // ...and the backup code must NOT authenticate them once split (the
+            // server stores it hashed and can no longer present it).
+            $this->postJson('/api/notifier/backup', ['type' => 'backup_database'], [
+                'X-Notifier-Token' => 'backup-code-value',
+            ])->assertStatus(403);
+        });
+
+        it('falls back to the backup code when no trigger secret is configured', function () {
+            Config::set('notifier.backup_code', 'backup-code-value');
+            Config::set('notifier.trigger_secret', null);
+
+            $response = $this->postJson('/api/notifier/backup', ['type' => 'backup_database'], [
+                'X-Notifier-Token' => 'backup-code-value',
+            ]);
+            expect($response->status())->not->toBe(403);
+        });
+    });
+
     describe('environment validation', function () {
         it('returns the same generic 403 when environment variables are missing and leaks no env names', function () {
             Config::set('notifier.backup_code', '');
