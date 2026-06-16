@@ -40,7 +40,8 @@ describe('NotifierInstallCommand', function () {
             $this->artisan('notifier:install', ['--force' => true])
                 ->expectsQuestion('NOTIFIER_BACKUP_CODE', 'new-code')
                 ->expectsQuestion('NOTIFIER_URL', 'https://new-url.com')
-                ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'new-password')
+                ->expectsConfirmation('Generate a strong backup password automatically?', 'no')
+                ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'new-password-1234')
                 ->expectsOutputToContain('saved successfully')
                 ->assertExitCode(0);
 
@@ -48,7 +49,7 @@ describe('NotifierInstallCommand', function () {
             expect($envContent)
                 ->toContain('NOTIFIER_BACKUP_CODE="new-code"')
                 ->toContain('NOTIFIER_URL="https://new-url.com"')
-                ->toContain('NOTIFIER_BACKUP_PASSWORD="new-password"')
+                ->toContain('NOTIFIER_BACKUP_PASSWORD="new-password-1234"')
                 ->not->toContain('existing-code');
         });
 
@@ -61,7 +62,8 @@ describe('NotifierInstallCommand', function () {
                 ->expectsConfirmation('Do you want to create .env from .env.example?', 'yes')
                 ->expectsQuestion('NOTIFIER_BACKUP_CODE', 'test-code')
                 ->expectsQuestion('NOTIFIER_URL', 'https://test.com')
-                ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'password')
+                ->expectsConfirmation('Generate a strong backup password automatically?', 'no')
+                ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'test-password-1234')
                 ->expectsOutputToContain('.env file has been created.')
                 ->assertExitCode(0);
 
@@ -95,11 +97,12 @@ describe('NotifierInstallCommand', function () {
             $this->artisan('notifier:install')
                 ->expectsQuestion('NOTIFIER_BACKUP_CODE', 'fresh-code')
                 ->expectsQuestion('NOTIFIER_URL', 'https://fresh.com')
-                ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'fresh-password')
+                ->expectsConfirmation('Generate a strong backup password automatically?', 'no')
+                ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'fresh-password-12')
                 ->assertExitCode(0);
 
             $envContent = file_get_contents($this->basePath.'/.env');
-            expect($envContent)->toContain('NOTIFIER_BACKUP_PASSWORD="fresh-password"');
+            expect($envContent)->toContain('NOTIFIER_BACKUP_PASSWORD="fresh-password-12"');
         });
     });
 });

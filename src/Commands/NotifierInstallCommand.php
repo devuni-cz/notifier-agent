@@ -19,9 +19,39 @@ final class NotifierInstallCommand extends Command
 {
     use DisplayHelperTrait;
 
+    /**
+     * Minimum length for the backup ZIP password. It encrypts the entire
+     * database + storage archive, so a weak value is crackable offline once
+     * an attacker has the archive.
+     */
+    private const MIN_BACKUP_PASSWORD_LENGTH = 16;
+
+    /**
+     * Minimum number of distinct characters - rejects low-entropy values such
+     * as "aaaaaaaaaaaaaaaa" or "1234123412341234" that pass a length-only check.
+     */
+    private const MIN_BACKUP_PASSWORD_UNIQUE_CHARS = 6;
+
     protected $signature = 'notifier:install {--force : Overwrites existing environment variables}';
 
     protected $description = 'Configure environment variables for Notifier package';
+
+    /**
+     * Validate the strength of a manually-entered backup password. Returns an
+     * error message to display, or null when the password is acceptable.
+     */
+    public static function backupPasswordError(string $password): ?string
+    {
+        if (mb_strlen($password) < self::MIN_BACKUP_PASSWORD_LENGTH) {
+            return 'Backup password must be at least '.self::MIN_BACKUP_PASSWORD_LENGTH.' characters (it encrypts the whole backup).';
+        }
+
+        if (count(array_unique(mb_str_split($password))) < self::MIN_BACKUP_PASSWORD_UNIQUE_CHARS) {
+            return 'Backup password is too predictable - use a more varied value (or let the installer generate one).';
+        }
+
+        return null;
+    }
 
     public function handle()
     {
@@ -51,11 +81,18 @@ final class NotifierInstallCommand extends Command
             required: 'Backup URL is required.',
         );
 
-        $backupPassword = password(
-            label: 'NOTIFIER_BACKUP_PASSWORD',
-            placeholder: 'Enter your backup ZIP password',
-            required: 'Backup password is required.',
-        );
+        if (confirm(label: 'Generate a strong backup password automatically?', default: true)) {
+            $backupPassword = bin2hex(random_bytes(24)); // 48 hex chars
+            warning('Store this backup password securely - it is required to restore (decrypt) a backup:');
+            info($backupPassword);
+        } else {
+            $backupPassword = password(
+                label: 'NOTIFIER_BACKUP_PASSWORD',
+                placeholder: 'At least '.self::MIN_BACKUP_PASSWORD_LENGTH.' characters',
+                required: 'Backup password is required.',
+                validate: fn (string $value): ?string => self::backupPasswordError($value),
+            );
+        }
 
         $this->updateEnv([
             'NOTIFIER_BACKUP_CODE' => $backupCode,
