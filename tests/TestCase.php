@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Devuni\Notifier\Tests;
 
 use Devuni\Notifier\NotifierServiceProvider;
+use Illuminate\Support\Facades\Http;
 use Orchestra\Testbench\TestCase as Orchestra;
 
 abstract class TestCase extends Orchestra
@@ -15,6 +16,11 @@ abstract class TestCase extends Orchestra
     protected function setUp(): void
     {
         parent::setUp();
+
+        // No test may hit the real network: an un-faked outbound request throws
+        // instead of silently leaving the host or hanging. Tests that exercise
+        // HTTP must Http::fake() the endpoints they touch.
+        Http::preventStrayRequests();
 
         $this->setUpDatabase();
     }
