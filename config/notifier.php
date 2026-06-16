@@ -8,11 +8,20 @@ return [
     | Authentication
     |--------------------------------------------------------------------------
     |
-    | The backup code is used to authenticate API requests from the central
-    | notifier application. This must match on both sides.
+    | The backup code authenticates OUTBOUND requests this app makes to the
+    | control plane (it is sent as X-Notifier-Token and verified there). The
+    | server stores it hashed at rest.
+    |
+    | The trigger secret authenticates INBOUND server->client backup triggers
+    | (the control plane presents it to this app's /api/notifier/backup). It is
+    | a separate value so the backup code never has to be reversible on the
+    | server. Falls back to the backup code for single-secret installs that
+    | have not split the two yet.
     |
     */
     'backup_code' => env('NOTIFIER_BACKUP_CODE', env('BACKUP_CODE')),
+
+    'trigger_secret' => env('NOTIFIER_TRIGGER_SECRET', env('NOTIFIER_BACKUP_CODE', env('BACKUP_CODE'))),
 
     /*
     |--------------------------------------------------------------------------

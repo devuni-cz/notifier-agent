@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Http;
 describe('NotifierSendBackupController', function () {
     beforeEach(function () {
         Config::set('notifier.backup_code', 'test-backup-code');
+        // Inbound triggers now authenticate against the trigger secret.
+        Config::set('notifier.trigger_secret', 'test-backup-code');
         Config::set('notifier.backup_url', 'https://test-backup.com/upload');
         Config::set('notifier.backup_zip_password', 'test-password');
         Http::fake(['*' => Http::response('', 200)]);
@@ -69,6 +71,35 @@ describe('NotifierSendBackupController', function () {
             ]);
 
             expect($response->status())->not->toBe(401);
+            expect($response->status())->not->toBe(403);
+        });
+    });
+
+    describe('trigger secret split', function () {
+        it('accepts the trigger secret and rejects the backup code when the two differ', function () {
+            Config::set('notifier.backup_code', 'backup-code-value');
+            Config::set('notifier.trigger_secret', 'trigger-secret-value');
+
+            // Inbound triggers authenticate against the trigger secret...
+            $accepted = $this->postJson('/api/notifier/backup', ['type' => 'backup_database'], [
+                'X-Notifier-Token' => 'trigger-secret-value',
+            ]);
+            expect($accepted->status())->not->toBe(403);
+
+            // ...and the backup code must NOT authenticate them once split (the
+            // server stores it hashed and can no longer present it).
+            $this->postJson('/api/notifier/backup', ['type' => 'backup_database'], [
+                'X-Notifier-Token' => 'backup-code-value',
+            ])->assertStatus(403);
+        });
+
+        it('falls back to the backup code when no trigger secret is configured', function () {
+            Config::set('notifier.backup_code', 'backup-code-value');
+            Config::set('notifier.trigger_secret', null);
+
+            $response = $this->postJson('/api/notifier/backup', ['type' => 'backup_database'], [
+                'X-Notifier-Token' => 'backup-code-value',
+            ]);
             expect($response->status())->not->toBe(403);
         });
     });

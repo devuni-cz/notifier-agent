@@ -29,7 +29,11 @@ final class VerifyNotifierTokenMiddleware
             return $this->deny();
         }
 
-        $expectedToken = config('notifier.backup_code');
+        // Inbound server->client triggers are authenticated by the trigger
+        // secret, NOT the backup code (which the server now stores hashed and
+        // can no longer present). Falls back to the backup code at runtime for
+        // single-secret installs that have not split the two yet.
+        $expectedToken = config('notifier.trigger_secret') ?: config('notifier.backup_code');
 
         $providedToken = $request->header('X-Notifier-Token');
 
