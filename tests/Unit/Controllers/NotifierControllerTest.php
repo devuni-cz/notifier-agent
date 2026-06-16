@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Http;
 describe('NotifierSendBackupController', function () {
     beforeEach(function () {
         Config::set('notifier.backup_code', 'test-backup-code');
+        // Inbound triggers now authenticate against the trigger secret.
+        Config::set('notifier.trigger_secret', 'test-backup-code');
         Config::set('notifier.backup_url', 'https://test-backup.com/upload');
         Config::set('notifier.backup_zip_password', 'test-password');
         Http::fake(['*' => Http::response('', 200)]);

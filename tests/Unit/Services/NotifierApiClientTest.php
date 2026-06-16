@@ -117,7 +117,7 @@ describe('NotifierApiClient replay signature', function () {
 
             return $ts !== '' && ctype_digit($ts)
                 && $nonce !== ''
-                && hash_equals(hash_hmac('sha256', $ts."\n".$nonce, $token), $sig);
+                && hash_equals(hash_hmac('sha256', $ts."\n".$nonce, hash('sha256', $token)), $sig);
         });
     });
 

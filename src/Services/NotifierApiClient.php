@@ -132,10 +132,12 @@ final class NotifierApiClient
     }
 
     /**
-     * Token + replay-signature headers applied to every request. The server
-     * verifies the signature (HMAC-SHA256 over "timestamp\nnonce" keyed by the
-     * token) for freshness and a single-use nonce, so a captured request cannot
-     * be replayed. Servers that don't verify simply ignore the extra headers.
+     * Token + replay-signature headers applied to every request. The signature
+     * is HMAC-SHA256 over "timestamp\nnonce" keyed by the SHA-256 hash of the
+     * token (not the token itself) - the server stores that same hash at rest
+     * (content_hash), so replay verification works even though the server never
+     * holds the token plaintext. The server checks freshness + a single-use
+     * nonce; servers that don't verify simply ignore the extra headers.
      *
      * @return array<string, string>
      */
@@ -144,12 +146,13 @@ final class NotifierApiClient
         $token = (string) config('notifier.backup_code');
         $timestamp = (string) time();
         $nonce = bin2hex(random_bytes(16));
+        $hmacKey = hash('sha256', $token);
 
         return [
             'X-Notifier-Token' => $token,
             'X-Notifier-Timestamp' => $timestamp,
             'X-Notifier-Nonce' => $nonce,
-            'X-Notifier-Signature' => hash_hmac('sha256', $timestamp."\n".$nonce, $token),
+            'X-Notifier-Signature' => hash_hmac('sha256', $timestamp."\n".$nonce, $hmacKey),
         ];
     }
 
