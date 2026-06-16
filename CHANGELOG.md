@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-06-16
+
 ### Added
 
 -   **Replay protection** — the agent signs every outbound request with `X-Notifier-Timestamp`, `X-Notifier-Nonce` and `X-Notifier-Signature` (HMAC-SHA256 over `timestamp\nnonce`, keyed by the SHA-256 hash of the token). Additive and backward-compatible: the server verifies the signature only when present, so un-upgraded servers/agents are unaffected.
