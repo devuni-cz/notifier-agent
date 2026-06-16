@@ -103,6 +103,42 @@ describe('NotifierApiClient requests', function () {
     });
 });
 
+describe('NotifierApiClient replay signature', function () {
+    it('attaches a verifiable timestamp/nonce/signature to every request', function () {
+        Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+        apiClient()->get('/announcements');
+
+        Http::assertSent(function ($request) {
+            $token = 'super-secret-token';
+            $ts = $request->header('X-Notifier-Timestamp')[0] ?? '';
+            $nonce = $request->header('X-Notifier-Nonce')[0] ?? '';
+            $sig = $request->header('X-Notifier-Signature')[0] ?? '';
+
+            return $ts !== '' && ctype_digit($ts)
+                && $nonce !== ''
+                && hash_equals(hash_hmac('sha256', $ts."\n".$nonce, $token), $sig);
+        });
+    });
+
+    it('uses a fresh nonce for each request', function () {
+        Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+        apiClient()->get('/a');
+        apiClient()->get('/b');
+
+        $nonces = [];
+        Http::assertSent(function ($request) use (&$nonces) {
+            $nonces[] = $request->header('X-Notifier-Nonce')[0] ?? '';
+
+            return true;
+        });
+
+        expect($nonces)->toHaveCount(2)
+            ->and($nonces[0])->not->toBe($nonces[1]);
+    });
+});
+
 describe('NotifierApiClient::formatError', function () {
     it('extracts the message and errors from a Laravel JSON error', function () {
         Http::fake(['*' => Http::response(['message' => 'Validation failed', 'errors' => ['field' => ['bad']]], 422)]);

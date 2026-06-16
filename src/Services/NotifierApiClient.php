@@ -128,7 +128,29 @@ final class NotifierApiClient
             // Without an Accept header, Laravel's abort() on the server renders
             // an HTML error page, which would end up verbatim in our logs.
             ->acceptJson()
-            ->withHeaders(['X-Notifier-Token' => (string) config('notifier.backup_code')]);
+            ->withHeaders($this->authHeaders());
+    }
+
+    /**
+     * Token + replay-signature headers applied to every request. The server
+     * verifies the signature (HMAC-SHA256 over "timestamp\nnonce" keyed by the
+     * token) for freshness and a single-use nonce, so a captured request cannot
+     * be replayed. Servers that don't verify simply ignore the extra headers.
+     *
+     * @return array<string, string>
+     */
+    private function authHeaders(): array
+    {
+        $token = (string) config('notifier.backup_code');
+        $timestamp = (string) time();
+        $nonce = bin2hex(random_bytes(16));
+
+        return [
+            'X-Notifier-Token' => $token,
+            'X-Notifier-Timestamp' => $timestamp,
+            'X-Notifier-Nonce' => $nonce,
+            'X-Notifier-Signature' => hash_hmac('sha256', $timestamp."\n".$nonce, $token),
+        ];
     }
 
     private function url(string $path): string
