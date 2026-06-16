@@ -21,7 +21,7 @@ v1.0.2 (security: throttle-před-token, pre-auth 403 unifikace, dump chmod 0600 
 ## 🟠 CI / release
 
 - [ ] **CI matrix má jediný entry** (php 8.4 / laravel 12.*) - composer povoluje `illuminate ^12||^13.14`, dev jede na L13, ale L13 se validuje až na release gate. Přidat L13 (a druhou PHP verzi) do push/PR CI.
-- [ ] 🟠 `release.yml` triggeruje na jakýkoliv `v*` tag a publikuje non-draft i když `CHANGELOG.md` nemá odpovídající sekci. Přidat guard (fail při chybějící sekci) + tag-range guard.
+- [x] 🟠 **(fix/release-workflow-hardening)** `release.yml` hardening: CHANGELOG guard (`exit 1` při chybějící sekci místo placeholderu), least-privilege `permissions` (`contents: write` jen na `release` job), `environment: release` gate na `release` i `version-bump` job. ⚠️ **ZBÝVÁ repo-side (GitHub UI) — bez něj jsou YAML gates no-op:** (1) **Protected tag ruleset** `v*` — vytvářet smí jen maintaineři (TOTO je reálná pojistka proti „kdokoli pushne tag → publikuje všem klientům"); (2) **Environment `release`** se *required reviewers* (Settings → Environments) → manuální approval před release i version-bump; (3) omezit, kdo smí spouštět `workflow_dispatch`.
 - [ ] 🟡 `version-bump.yml` pushuje přímo na `main` přes `GITHUB_TOKEN` a `code-style-fix.yml` auto-commituje na `github.head_ref` s `contents:write` na `pull_request` (fork-PR privilege-escalation surface). Ověřit branch-protection / omezit na same-repo PR.
 - [ ] 🟡 Rector: pustit v CI nebo zdokumentovat jako local-only (nakonfigurovaný, ale CI ho nikdy nevolá).
 

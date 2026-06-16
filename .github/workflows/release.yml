@@ -5,13 +5,16 @@ on:
     tags:
       - 'v*'
 
+# Least privilege: granted per-job. `tests` only reads; only `release` writes.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   tests:
     name: Verify tests pass
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v6
@@ -34,6 +37,13 @@ jobs:
     name: Create GitHub Release
     needs: tests
     runs-on: ubuntu-latest
+    # Gate publishing behind the `release` environment. Configure it in repo
+    # Settings -> Environments with required reviewers to make every release a
+    # manual approval (no-op until configured). Pair with a protected-tag
+    # ruleset (`v*` creatable only by maintainers) — the real publish control.
+    environment: release
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v6
@@ -51,8 +61,11 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           CHANGELOG=$(awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found{print}" CHANGELOG.md)
 
-          if [ -z "$CHANGELOG" ]; then
-            CHANGELOG="No changelog entry found for version ${VERSION}."
+          # Hard guard: refuse to publish a release that has no CHANGELOG entry.
+          # This blocks accidental/empty tags and forces documented release notes.
+          if [ -z "$(echo "$CHANGELOG" | tr -d '[:space:]')" ]; then
+            echo "::error::No CHANGELOG.md section found for version ${VERSION}. Refusing to publish a release without release notes."
+            exit 1
           fi
 
           # Write to file to preserve multiline
