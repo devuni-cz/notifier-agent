@@ -69,7 +69,10 @@ final class PhpZipCreator implements ZipCreatorInterface
                 continue;
             }
 
-            $relativePath = mb_substr($filePath, mb_strlen($sourcePath) + 1);
+            // ZIP entry names must use forward slashes (spec). Normalize so an
+            // archive created on a Windows client is well-formed and the
+            // exclusion matching below (which uses '/') works there too.
+            $relativePath = str_replace('\\', '/', mb_substr($filePath, mb_strlen($sourcePath) + 1));
 
             if (empty($relativePath)) {
                 $logger->warning('➡️ skipping file with empty relative path: '.$filePath);
