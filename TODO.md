@@ -12,10 +12,10 @@ v1.0.2 (security: throttle-před-token, pre-auth 403 unifikace, dump chmod 0600 
 
 ## 🟠 Testy (iluzorní pokrytí)
 
-- [ ] **33 trvale skipnutých command testů** - `NotifierInstallCommandTest` 15/15, `StorageBackupCommandTest` 11/16, `DatabaseBackupCommandTest` 7/10. Command pokrytí je iluze; `.env`-writer/escaping má reálný test jen v `NotifierInstallCommandEscapingTest`. Skipy nahradit reálnými testy nebo odstranit.
-- [ ] **Filament render-hook auto-injekce netestovaná** (vlajková on-by-default feature) - `AnnouncementsFilamentBannerTest` renderuje view přímo, nikdy nevolá `FilamentView::registerRenderHook` v `NotifierServiceProvider`. Navíc `filament/*` chybí v `require-dev`. Přidat dep + behaviorální test.
-- [ ] 🟠 `ProcessBackupJob` (timeout 900s, tries 1) + `NOTIFIER_QUEUE_CONNECTION` dispatch větev v `NotifierSendBackupController` - 0 pokrytí.
-- [ ] 🟡 ZIP creators (`CliZipCreator` 7z + `PhpZipCreator`) bez behaviorálních testů; `NotifierStorageServiceTest` je tautologický → otestovat reálnou tvorbu AES-256 šifrovaného archivu (jádro backup garance).
+- [~] **„33 skipnutých command testů" — NEAKTUÁLNÍ** (audit 2026-06-14). Reálný stav: ~4 skipnuté (3 pg_dump Windows-only + 1 7z behaviorální). Install/Storage/Database command testy běží. Číslo bylo stale.
+- [x] **Filament render-hook auto-injekce — UŽ POKRYTO** (TODO bylo stale): `tests/Filament/FilamentRenderHook*` (13 testů) ověřuje registraci/ne-registraci/per-target/validity přes reálný `FilamentView::hasRenderHook`/`renderHook`. `filament/support ^5.6` je správně v `require-dev` (konzumenti nedostanou; runtime `class_exists` guard = dashboard-agnostické) + `suggest` entry přidán (PR #19).
+- [x] 🟠 **(PR #19)** `ProcessBackupJob` (tries=1/900s kontrakt) + `NOTIFIER_QUEUE_CONNECTION` dispatch větev pokryty (`ProcessBackupJobTest` + `BackupQueueDispatchTest`).
+- [x] 🟡 **(PR #19)** ZIP creators behaviorálně otestovány (`PhpZipCreatorTest` dokazuje AES-256 garanci — správné heslo dešifruje, špatné ne; `CliZipCreatorTest` 7z na CI). + opraven Windows entry-path bug (separátory).
 - [ ] 🟡 Přidat `Http::preventStrayRequests()` do HTTP testů; protrhat tautologický `NotifierServiceProviderTest`.
 
 ## 🟠 CI / release
