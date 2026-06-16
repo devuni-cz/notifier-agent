@@ -36,6 +36,9 @@
     "conflict": {
         "devuni/notifier-package": "*"
     },
+    "suggest": {
+        "filament/support": "Auto-injects announcement banners into FilamentPHP dashboards; not required when using a custom (SPA) dashboard."
+    },
     "authors": [
         {
             "name": "Janeček David",
