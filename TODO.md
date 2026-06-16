@@ -37,6 +37,7 @@ v1.0.2 (security: throttle-před-token, pre-auth 403 unifikace, dump chmod 0600 
 
 ## 🟡 ZIP / backup
 
+- [x] 🟠 **(fix/install-zip-password-policy)** `notifier:install` vynucuje sílu ZIP hesla: min. 16 znaků + min. 6 různých znaků (`NotifierInstallCommand::backupPasswordError`), default nabízí auto-generaci `bin2hex(random_bytes(24))`. Dřív přijal libovolný neprázdný řetězec (security review HIGH `d_secret123`). 4 testy + aktualizované install/escaping testy.
 - [ ] 🟡 ZIP šifruje obsah (AES-256), ale **ne názvy souborů** v central directory. Rozhodnout, zda jsou path metadata citlivá (`7z -mhe=on` umí, PHP `ZipArchive` ne).
 
 ## 📦 Packaging (cross-cutting s notifier-package)

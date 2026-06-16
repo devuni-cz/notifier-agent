@@ -22,7 +22,8 @@ describe('NotifierInstallCommand env escaping', function () {
         $this->artisan('notifier:install')
             ->expectsQuestion('NOTIFIER_BACKUP_CODE', 'code "with" quotes')
             ->expectsQuestion('NOTIFIER_URL', 'https://example.com/a b')
-            ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'pa\\ss "word" x')
+            ->expectsConfirmation('Generate a strong backup password automatically?', 'no')
+            ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'pa\\ss "word" longtail')
             ->assertExitCode(0);
 
         $envContent = file_get_contents(base_path('.env'));
@@ -30,7 +31,7 @@ describe('NotifierInstallCommand env escaping', function () {
         expect($envContent)
             ->toContain('NOTIFIER_BACKUP_CODE="code \\"with\\" quotes"')
             ->toContain('NOTIFIER_URL="https://example.com/a b"')
-            ->toContain('NOTIFIER_BACKUP_PASSWORD="pa\\\\ss \\"word\\" x"');
+            ->toContain('NOTIFIER_BACKUP_PASSWORD="pa\\\\ss \\"word\\" longtail"');
 
         // The written file must round-trip: a dotenv parser reads back the
         // exact values the user entered.
@@ -38,7 +39,7 @@ describe('NotifierInstallCommand env escaping', function () {
 
         expect($parsed['NOTIFIER_BACKUP_CODE'])->toBe('code "with" quotes');
         expect($parsed['NOTIFIER_URL'])->toBe('https://example.com/a b');
-        expect($parsed['NOTIFIER_BACKUP_PASSWORD'])->toBe('pa\\ss "word" x');
+        expect($parsed['NOTIFIER_BACKUP_PASSWORD'])->toBe('pa\\ss "word" longtail');
     });
 
     it('replaces existing keys idempotently on re-run with --force, keeping escaping intact', function () {
@@ -52,7 +53,8 @@ describe('NotifierInstallCommand env escaping', function () {
         $this->artisan('notifier:install', ['--force' => true])
             ->expectsQuestion('NOTIFIER_BACKUP_CODE', 'new \\ "code"')
             ->expectsQuestion('NOTIFIER_URL', 'https://new.example.com')
-            ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'C:\\secret\\path')
+            ->expectsConfirmation('Generate a strong backup password automatically?', 'no')
+            ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'C:\\secret\\path\\longer')
             ->assertExitCode(0);
 
         $envContent = file_get_contents(base_path('.env'));
@@ -67,14 +69,15 @@ describe('NotifierInstallCommand env escaping', function () {
 
         expect($parsed['NOTIFIER_BACKUP_CODE'])->toBe('new \\ "code"');
         expect($parsed['NOTIFIER_URL'])->toBe('https://new.example.com');
-        expect($parsed['NOTIFIER_BACKUP_PASSWORD'])->toBe('C:\\secret\\path');
+        expect($parsed['NOTIFIER_BACKUP_PASSWORD'])->toBe('C:\\secret\\path\\longer');
     });
 
     it('still detects an existing installation when values were written escaped', function () {
         $this->artisan('notifier:install')
             ->expectsQuestion('NOTIFIER_BACKUP_CODE', 'code "with" quotes')
             ->expectsQuestion('NOTIFIER_URL', 'https://example.com')
-            ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'pass\\word')
+            ->expectsConfirmation('Generate a strong backup password automatically?', 'no')
+            ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'pass\\word longer123')
             ->assertExitCode(0);
 
         // Re-running without --force refuses to overwrite.
