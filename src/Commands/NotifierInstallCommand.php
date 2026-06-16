@@ -100,7 +100,7 @@ final class NotifierInstallCommand extends Command
             $line = $key.'='.$this->formatEnvValue($value);
 
             if (preg_match($pattern, $envContent)) {
-                // Callback keeps the replacement literal — preg_replace()
+                // Callback keeps the replacement literal - preg_replace()
                 // would reinterpret backslashes and $ in the escaped value.
                 $envContent = preg_replace_callback($pattern, fn (): string => $line, $envContent);
             } else {

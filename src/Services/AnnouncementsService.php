@@ -186,7 +186,7 @@ final class AnnouncementsService
      * - `ends_at` null/empty -> "Platí od {start} (do odvolání)"
      * - `starts_at` missing/unparseable -> null (the view omits the line)
      *
-     * Parsing is fail-soft: a malformed date never throws — it is logged and the
+     * Parsing is fail-soft: a malformed date never throws - it is logged and the
      * method returns null, consistent with the rest of this service.
      *
      * @param  array<string, mixed>  $announcement

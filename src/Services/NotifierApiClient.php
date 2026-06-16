@@ -14,14 +14,14 @@ use RuntimeException;
  *
  * Every authenticated request to the server goes through here, so the security
  * invariants live in ONE place and cannot be forgotten by a new capability:
- *   - the base URL is HTTPS-only — a misconfigured `http://` URL is refused
+ *   - the base URL is HTTPS-only - a misconfigured `http://` URL is refused
  *     before the `X-Notifier-Token` secret can ride out over cleartext;
  *   - redirects are never followed on a token-bearing request (Guzzle re-sends
  *     custom headers across redirects, so a 30x could relay the secret elsewhere);
  *   - the token header and the configured base URL are applied uniformly.
  *
  * Success/failure handling stays with the caller: a push capability throws, a
- * pull capability swallows. This class only transports — it never decides policy.
+ * pull capability swallows. This class only transports - it never decides policy.
  */
 final class NotifierApiClient
 {
@@ -81,7 +81,7 @@ final class NotifierApiClient
      * Authenticated GET to an ABSOLUTE url (e.g. a server-supplied status_url).
      *
      * The caller is responsible for validating the url's origin before handing
-     * the token to it — the token is attached here. See ChunkedUploadService.
+     * the token to it - the token is attached here. See ChunkedUploadService.
      */
     public function getAbsolute(string $url, int $timeout = 30): Response
     {

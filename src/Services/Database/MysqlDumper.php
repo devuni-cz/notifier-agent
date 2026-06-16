@@ -62,7 +62,7 @@ final class MysqlDumper implements DatabaseDumperInterface
     }
 
     /**
-     * Build the mysqldump argv. The password is intentionally absent here — it is
+     * Build the mysqldump argv. The password is intentionally absent here - it is
      * passed via the MYSQL_PWD env var in dump() so it never reaches the process table.
      *
      * @param  array<string, mixed>  $config

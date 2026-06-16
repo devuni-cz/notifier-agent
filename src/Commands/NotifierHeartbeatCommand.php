@@ -22,7 +22,7 @@ final class NotifierHeartbeatCommand extends Command
         $this->displayNotifierHeader('Heartbeat');
 
         if (! config('notifier.features.heartbeat', true)) {
-            $this->line('<fg=gray>ℹ Heartbeat feature is disabled (NOTIFIER_HEARTBEAT_ENABLED=false) — nothing to send.</>');
+            $this->line('<fg=gray>ℹ Heartbeat feature is disabled (NOTIFIER_HEARTBEAT_ENABLED=false) - nothing to send.</>');
             $this->newLine();
 
             return self::SUCCESS;

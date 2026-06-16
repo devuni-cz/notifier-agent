@@ -16,7 +16,7 @@ use Throwable;
  * The heartbeat reuses the configured backup URL (`{NOTIFIER_URL}/heartbeat`,
  * e.g. `.../api/v1/repositories/52740614/heartbeat`) and the same
  * `X-Notifier-Token`, so the server already knows which site is reporting and
- * stamps its own `last_heartbeat_at` on receipt — the agent never sends that.
+ * stamps its own `last_heartbeat_at` on receipt - the agent never sends that.
  *
  * Unlike the announcements PULL (which swallows failures so a down server can't
  * break the dashboard), the heartbeat is a PUSH: gathering the manifest is always
@@ -43,7 +43,7 @@ final class HeartbeatService
     /**
      * Build the wire-contract manifest the server's StoreHeartbeatRequest accepts.
      *
-     * This is always instant and never throws — every value is read defensively so
+     * This is always instant and never throws - every value is read defensively so
      * a heartbeat can report even from a partially misconfigured host.
      *
      * @return array<string, mixed>

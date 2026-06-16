@@ -1,8 +1,8 @@
-# TODO — devuni/notifier-agent
+# TODO - devuni/notifier-agent
 
 > Backlog z multi-agentního auditu 2026-06-14 (dedup + ověřeno proti kódu). Stav: v1.1.0.
 > Priorita: 🔴 critical · 🟠 high/medium · 🟡 low · ✅ hotovo.
-> Reference `soubor:řádek` vůči stavu při auditu — před zásahem ověřit.
+> Reference `soubor:řádek` vůči stavu při auditu - před zásahem ověřit.
 
 ## ✅ Hotovo
 
@@ -12,28 +12,28 @@ v1.0.2 (security: throttle-před-token, pre-auth 403 unifikace, dump chmod 0600 
 
 ## 🟠 Testy (iluzorní pokrytí)
 
-- [ ] **33 trvale skipnutých command testů** — `NotifierInstallCommandTest` 15/15, `StorageBackupCommandTest` 11/16, `DatabaseBackupCommandTest` 7/10. Command pokrytí je iluze; `.env`-writer/escaping má reálný test jen v `NotifierInstallCommandEscapingTest`. Skipy nahradit reálnými testy nebo odstranit.
-- [ ] **Filament render-hook auto-injekce netestovaná** (vlajková on-by-default feature) — `AnnouncementsFilamentBannerTest` renderuje view přímo, nikdy nevolá `FilamentView::registerRenderHook` v `NotifierServiceProvider`. Navíc `filament/*` chybí v `require-dev`. Přidat dep + behaviorální test.
-- [ ] 🟠 `ProcessBackupJob` (timeout 900s, tries 1) + `NOTIFIER_QUEUE_CONNECTION` dispatch větev v `NotifierSendBackupController` — 0 pokrytí.
+- [ ] **33 trvale skipnutých command testů** - `NotifierInstallCommandTest` 15/15, `StorageBackupCommandTest` 11/16, `DatabaseBackupCommandTest` 7/10. Command pokrytí je iluze; `.env`-writer/escaping má reálný test jen v `NotifierInstallCommandEscapingTest`. Skipy nahradit reálnými testy nebo odstranit.
+- [ ] **Filament render-hook auto-injekce netestovaná** (vlajková on-by-default feature) - `AnnouncementsFilamentBannerTest` renderuje view přímo, nikdy nevolá `FilamentView::registerRenderHook` v `NotifierServiceProvider`. Navíc `filament/*` chybí v `require-dev`. Přidat dep + behaviorální test.
+- [ ] 🟠 `ProcessBackupJob` (timeout 900s, tries 1) + `NOTIFIER_QUEUE_CONNECTION` dispatch větev v `NotifierSendBackupController` - 0 pokrytí.
 - [ ] 🟡 ZIP creators (`CliZipCreator` 7z + `PhpZipCreator`) bez behaviorálních testů; `NotifierStorageServiceTest` je tautologický → otestovat reálnou tvorbu AES-256 šifrovaného archivu (jádro backup garance).
 - [ ] 🟡 Přidat `Http::preventStrayRequests()` do HTTP testů; protrhat tautologický `NotifierServiceProviderTest`.
 
 ## 🟠 CI / release
 
-- [ ] **CI matrix má jediný entry** (php 8.4 / laravel 12.*) — composer povoluje `illuminate ^12||^13.14`, dev jede na L13, ale L13 se validuje až na release gate. Přidat L13 (a druhou PHP verzi) do push/PR CI.
+- [ ] **CI matrix má jediný entry** (php 8.4 / laravel 12.*) - composer povoluje `illuminate ^12||^13.14`, dev jede na L13, ale L13 se validuje až na release gate. Přidat L13 (a druhou PHP verzi) do push/PR CI.
 - [ ] 🟠 `release.yml` triggeruje na jakýkoliv `v*` tag a publikuje non-draft i když `CHANGELOG.md` nemá odpovídající sekci. Přidat guard (fail při chybějící sekci) + tag-range guard.
 - [ ] 🟡 `version-bump.yml` pushuje přímo na `main` přes `GITHUB_TOKEN` a `code-style-fix.yml` auto-commituje na `github.head_ref` s `contents:write` na `pull_request` (fork-PR privilege-escalation surface). Ověřit branch-protection / omezit na same-repo PR.
 - [ ] 🟡 Rector: pustit v CI nebo zdokumentovat jako local-only (nakonfigurovaný, ale CI ho nikdy nevolá).
 
 ## 🟡 Dokumentace / drobnosti
 
-- [ ] **`SECURITY.md` má prohozené verze** (ř. 7–11) — deklaruje 2.x supported / 1.x unsupported; reálně je to v1.0.0–v1.1.0 (2.x patří superseded `notifier-package`). Opravit.
+- [ ] **`SECURITY.md` má prohozené verze** (ř. 7–11) - deklaruje 2.x supported / 1.x unsupported; reálně je to v1.0.0–v1.1.0 (2.x patří superseded `notifier-package`). Opravit.
 - [ ] `README.md:76` tvrdí „Rate-limited to 10 req/min", ale `routes/web.php:16` je `throttle:10,60` = **10/hod**. Opravit doc.
 - [ ] Přepsat stale `VERSION_MANAGEMENT.md` (boilerplate o registraci na packagist/webhook neodpovídá realitě).
 - [ ] 🟡 Divergentní announcements fallback literály: config `features.announcements` default true vs `AnnouncementsService.php:36` default false; `failure_cache_ttl` 300 vs fallback 60 (neškodné přes `mergeConfigFrom`, ale matoucí). Sjednotit.
 - [ ] 🟡 Ověřit, že Filament hook `panels::content.start` je platný v majoru Filamentu nasazeném v klientských appkách (přesunutý hook = banner tiše nerenderuje).
 - [ ] 🟡 Ověřit sync `AnnouncementTypeEnum` se serverem + graceful degrade na `tryFrom` (žádný chip pro NOTICE/neznámé).
-- [ ] 🟡 Raise PHPStan nad level 5 (teď level 5 clean, bez baseline/ignores) — dobrý odrazový bod pro 6+.
+- [ ] 🟡 Raise PHPStan nad level 5 (teď level 5 clean, bez baseline/ignores) - dobrý odrazový bod pro 6+.
 
 ## 🟡 ZIP / backup
 
@@ -41,13 +41,13 @@ v1.0.2 (security: throttle-před-token, pre-auth 403 unifikace, dump chmod 0600 
 
 ## 📦 Packaging (cross-cutting s notifier-package)
 
-- [ ] **Označit `devuni/notifier-package` jako `abandoned`** na Packagistu (replacement `devuni/notifier-agent`) + archiv GitHub repa — jeho `composer.json` nemá `abandoned` klíč, konzumenti dál updatují mrtvou 2.x linii.
+- [ ] **Označit `devuni/notifier-package` jako `abandoned`** na Packagistu (replacement `devuni/notifier-agent`) + archiv GitHub repa - jeho `composer.json` nemá `abandoned` klíč, konzumenti dál updatují mrtvou 2.x linii.
 - [ ] 🟡 Rozhodnout o `v1.0.0` (yank vs nechat): `conflict` proti notifier-package byl přidán až ve `v1.0.1`, takže konzument pinnutý přesně na `v1.0.0` může nainstalovat oba balíčky a rozbít resolving sdíleného namespace.
 
 ## 🔭 Roadmap (probráno, nepostaveno)
 
-- [x] **Heartbeat/identity manifest (v1.3.0, server !111)** — `HeartbeatService` + `notifier:heartbeat` POSTuje manifest (verze, php/laravel, queue_connection, enabled_features, disk free/total, last db/storage backup, reported_at) na `/heartbeat`; push semantika (throws); host scheduluje hourly. Server: `RepositoryHeartbeat` (upsert, vlastní receipt time), Agent card na repo show, opt-in + once-guard stale alerting. **Scheduler/cron liveness je pokrytý implicitně** (příchod heartbeatu = scheduler žije).
-- [ ] **Heartbeat → extensible health-checks layer (budoucí increment)** — dnešní manifest je TYPOVANÝ (sloupcový), takže nový signál = migrace. Pro monitorování host infra (queue workeři/supervisor, systemd, cron-detail) přidat GENERICKÝ `checks` json bag: agent hlásí mapu pojmenovaných checků (`{queue:{status,detail}, supervisor:notifier-worker:{...}, systemd:redis:{...}}`), server uloží do JEDNOHO json sloupce (nový check = ŽÁDNÁ migrace), UI renderuje genericky, alerting per-check status. Na agentu pluggable `HealthCheck` interface (každý check = třída; config allowlist služeb). **Snadné+vysoko-hodnotné:** queue-depth/oldest-pending + scheduler-last-run (DB/cache, žádný shell). **Pozor:** supervisorctl = shell (jde-li web-user), `systemctl is-active` = obvykle potřebuje root → web-user nemusí smět. (Probráno 2026-06-15, odloženo.)
-- [ ] **Backup restore-verifiability** — dokázat, že shippnutá šifrovaná záloha se dešifruje a dump obnoví.
+- [x] **Heartbeat/identity manifest (v1.3.0, server !111)** - `HeartbeatService` + `notifier:heartbeat` POSTuje manifest (verze, php/laravel, queue_connection, enabled_features, disk free/total, last db/storage backup, reported_at) na `/heartbeat`; push semantika (throws); host scheduluje hourly. Server: `RepositoryHeartbeat` (upsert, vlastní receipt time), Agent card na repo show, opt-in + once-guard stale alerting. **Scheduler/cron liveness je pokrytý implicitně** (příchod heartbeatu = scheduler žije).
+- [ ] **Heartbeat → extensible health-checks layer (budoucí increment)** - dnešní manifest je TYPOVANÝ (sloupcový), takže nový signál = migrace. Pro monitorování host infra (queue workeři/supervisor, systemd, cron-detail) přidat GENERICKÝ `checks` json bag: agent hlásí mapu pojmenovaných checků (`{queue:{status,detail}, supervisor:notifier-worker:{...}, systemd:redis:{...}}`), server uloží do JEDNOHO json sloupce (nový check = ŽÁDNÁ migrace), UI renderuje genericky, alerting per-check status. Na agentu pluggable `HealthCheck` interface (každý check = třída; config allowlist služeb). **Snadné+vysoko-hodnotné:** queue-depth/oldest-pending + scheduler-last-run (DB/cache, žádný shell). **Pozor:** supervisorctl = shell (jde-li web-user), `systemctl is-active` = obvykle potřebuje root → web-user nemusí smět. (Probráno 2026-06-15, odloženo.)
+- [ ] **Backup restore-verifiability** - dokázat, že shippnutá šifrovaná záloha se dešifruje a dump obnoví.
 - [ ] Thin WARNING+ log shipper do control plane (level filtering + rate/volume control).
 - [ ] Capability-kernel refactor (formalizovat backups/announcements za společný registry).

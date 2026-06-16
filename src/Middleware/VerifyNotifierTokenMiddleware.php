@@ -55,7 +55,7 @@ final class VerifyNotifierTokenMiddleware
     /**
      * Unauthenticated callers always receive the same generic response,
      * regardless of whether the token is missing, wrong, or the server-side
-     * environment is misconfigured — so the endpoint leaks nothing about its
+     * environment is misconfigured - so the endpoint leaks nothing about its
      * configuration before authentication. The real reason is logged above.
      */
     private function deny(): Response

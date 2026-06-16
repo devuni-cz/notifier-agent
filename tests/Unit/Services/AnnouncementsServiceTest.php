@@ -26,7 +26,7 @@ describe('AnnouncementsService::activeAnnouncements', function () {
             '*/repositories/52740614/announcements' => Http::response([
                 'announcements' => [
                     // 'high' is a real AnnouncementSeverityEnum value the server can send
-                    // (critical/high/medium/low/info) — keep the contract pinned to reality.
+                    // (critical/high/medium/low/info) - keep the contract pinned to reality.
                     ['content' => 'Maintenance on 2026-06-30', 'severity' => 'high'],
                 ],
             ], 200),

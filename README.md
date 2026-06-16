@@ -38,16 +38,16 @@ php artisan notifier:check     # verify setup (env, DB, 7z, mysqldump, URL)
 
 ### Migrating from `devuni/notifier-package`
 
-This package is the successor of [`devuni/notifier-package`](https://github.com/devuni-cz/notifier-package) — same namespace (`Devuni\Notifier\`), same env vars (`NOTIFIER_*`), same artisan commands, same `config/notifier.php`, same route prefix. The swap is one step:
+This package is the successor of [`devuni/notifier-package`](https://github.com/devuni-cz/notifier-package) - same namespace (`Devuni\Notifier\`), same env vars (`NOTIFIER_*`), same artisan commands, same `config/notifier.php`, same route prefix. The swap is one step:
 
 ```bash
 composer remove devuni/notifier-package
 composer require devuni/notifier-agent
 ```
 
-Nothing else changes — your published config, `.env`, and scheduled `notifier:*` commands keep working as-is. Don't be confused by the version number: `notifier-agent` restarts at `1.0.0`, but it contains everything `notifier-package` `2.8.0` had (and newer).
+Nothing else changes - your published config, `.env`, and scheduled `notifier:*` commands keep working as-is. Don't be confused by the version number: `notifier-agent` restarts at `1.0.0`, but it contains everything `notifier-package` `2.8.0` had (and newer).
 
-> **Never install both packages side by side** — they share the `Devuni\Notifier\` namespace. Composer refuses the combination (a `conflict` rule guards it), so if you see a conflict error during `composer require`, run the `composer remove` step first.
+> **Never install both packages side by side** - they share the `Devuni\Notifier\` namespace. Composer refuses the combination (a `conflict` rule guards it), so if you see a conflict error during `composer require`, run the `composer remove` step first.
 
 Heads-up when coming from `notifier-package` ≤ 2.7.x: version 2.8.0+ introduced **announcements**, which are enabled by default (see below). If you don't want the banner, set `NOTIFIER_ANNOUNCEMENTS_ENABLED=false`.
 

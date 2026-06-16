@@ -36,15 +36,13 @@ git push origin v1.0.0
     - Creates GitHub release
     - Updates documentation
 
-2. **Packagist updates** (after setup):
+2. **Packagist updates** automatically:
     - New version available via Composer
     - Users can `composer update`
 
-## 📦 Packagist Setup
+## 📦 Packagist
 
-1. Register at [packagist.org](https://packagist.org)
-2. Submit: `https://github.com/devuni-cz/notifier-agent`
-3. Set up GitHub webhook for auto-updates
+The package is published as [`devuni/notifier-agent`](https://packagist.org/packages/devuni/notifier-agent). A pushed `v*` tag becomes available via Composer automatically - no manual step per release.
 
 ## 🛠️ Available Commands
 

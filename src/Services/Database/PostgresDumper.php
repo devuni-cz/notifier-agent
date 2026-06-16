@@ -65,7 +65,7 @@ final class PostgresDumper implements DatabaseDumperInterface
     }
 
     /**
-     * Build the pg_dump/ysql_dump argv. The password is intentionally absent here — it
+     * Build the pg_dump/ysql_dump argv. The password is intentionally absent here - it
      * is passed via the PGPASSWORD env var in dump() so it never reaches the process table.
      *
      * @param  array<string, mixed>  $config

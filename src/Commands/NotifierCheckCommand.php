@@ -95,8 +95,8 @@ final class NotifierCheckCommand extends Command
     }
 
     /**
-     * Mask a secret for display. We only report presence + length — never any
-     * plaintext characters — so the shared secret can't leak into terminal
+     * Mask a secret for display. We only report presence + length - never any
+     * plaintext characters - so the shared secret can't leak into terminal
      * scrollback or CI logs from a diagnostic command.
      */
     private function maskValue(?string $value): string

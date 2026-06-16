@@ -108,7 +108,7 @@ describe('NotifierSendBackupController', function () {
             }
 
             // Before the reorder, throttle ran after token verification, so
-            // invalid tokens returned 403 forever — an unlimited brute force.
+            // invalid tokens returned 403 forever - an unlimited brute force.
             $this->postJson('/api/notifier/backup', ['type' => 'database'], [
                 'X-Notifier-Token' => 'wrong-token',
             ])->assertStatus(429);

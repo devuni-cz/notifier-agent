@@ -150,7 +150,7 @@ describe('Backup Workflow Integration', function () {
             $response = $this->postJson('/api/notifier/backup', ['type' => 'backup_database']);
 
             // A misconfigured server answers with the same generic 403 as a
-            // wrong token — configuration details are never disclosed.
+            // wrong token - configuration details are never disclosed.
             expect($response->status())->toBe(403);
 
             $data = $response->json();

@@ -57,7 +57,7 @@ describe('NotifierInstallCommand env escaping', function () {
 
         $envContent = file_get_contents(base_path('.env'));
 
-        // The old lines were replaced in place — no duplicated keys.
+        // The old lines were replaced in place - no duplicated keys.
         expect(mb_substr_count($envContent, 'NOTIFIER_BACKUP_CODE='))->toBe(1);
         expect(mb_substr_count($envContent, 'NOTIFIER_URL='))->toBe(1);
         expect(mb_substr_count($envContent, 'NOTIFIER_BACKUP_PASSWORD='))->toBe(1);

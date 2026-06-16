@@ -1,6 +1,6 @@
 {
     "name": "devuni/notifier-agent",
-    "description": "Laravel agent for the Devuni Notifier platform — encrypted backups and announcements.",
+    "description": "Laravel agent for the Devuni Notifier platform - encrypted backups and announcements.",
     "keywords": [
         "laravel",
         "notifier",
