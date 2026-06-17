@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-06-17
+
 ### Added
 
 -   **End-to-end request correlation** — every HTTP call of a single backup run (init → chunks → finalize → status poll) now carries one shared `X-Request-Id`, so a run can be matched across the agent log and the control-plane log with a single `grep <request_id>`. Additive and backward-compatible: an un-upgraded server simply ignores the header.
