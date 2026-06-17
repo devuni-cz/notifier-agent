@@ -7,6 +7,7 @@ namespace Devuni\Notifier\Services;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -25,6 +26,37 @@ use RuntimeException;
  */
 final class NotifierApiClient
 {
+    /**
+     * Correlation id sent as X-Request-Id on every request of one backup run, so
+     * the whole run (init -> chunks -> finalize -> poll) can be grepped on both
+     * sides. Null between runs; an ad-hoc call (announcements/heartbeat) then gets
+     * a fresh per-call id instead.
+     */
+    private ?string $requestId = null;
+
+    /**
+     * Pin a correlation id for the duration of a backup run. Validated against the
+     * same charset the server accepts, so a bug can never make us send a header
+     * the server would reject (and turn a backup into a confusing 4xx).
+     */
+    public function withRequestId(string $requestId): void
+    {
+        if (preg_match('/^[A-Za-z0-9._-]{8,64}$/', $requestId) !== 1) {
+            throw new RuntimeException('Invalid request id: '.$requestId);
+        }
+
+        $this->requestId = $requestId;
+    }
+
+    /**
+     * Release the pinned run id (call in a finally) so it never bleeds into a
+     * later, unrelated request on this singleton in a long-lived worker.
+     */
+    public function clearRequestId(): void
+    {
+        $this->requestId = null;
+    }
+
     /**
      * The configured, HTTPS-enforced base URL (no trailing slash).
      *
@@ -94,6 +126,35 @@ final class NotifierApiClient
      */
     public function formatError(Response $response): string
     {
+        return $this->extractMessage($response);
+    }
+
+    /**
+     * Structured error detail for logging + correlation. On top of the human
+     * message, surfaces the server's `error_id` and `request_id` (the server
+     * returns them in the JSON body on a 5xx and echoes request_id on the
+     * X-Request-Id header). Old servers omit them -> nulls, fully backward
+     * compatible. Every id is sanitized so a tampered/odd response cannot inject
+     * into our log lines.
+     *
+     * @return array{message: string, error_id: ?string, request_id: ?string, type: ?string}
+     */
+    public function errorDetails(Response $response): array
+    {
+        $json = $response->json();
+        $json = is_array($json) ? $json : [];
+
+        return [
+            'message' => $this->extractMessage($response),
+            'error_id' => $this->safeId($json['error_id'] ?? null),
+            'request_id' => $this->safeId($json['request_id'] ?? null)
+                ?? $this->safeId($response->header('X-Request-Id')),
+            'type' => $this->safeShort($json['type'] ?? null),
+        ];
+    }
+
+    private function extractMessage(Response $response): string
+    {
         $json = $response->json();
 
         if (is_array($json)) {
@@ -104,17 +165,52 @@ final class NotifierApiClient
                     $detail .= ' '.json_encode($json['errors'], JSON_UNESCAPED_UNICODE);
                 }
 
-                return $detail;
+                return $this->sanitizeMessage($detail);
             }
 
             if (isset($json['errors']) && is_array($json['errors'])) {
-                return json_encode($json['errors'], JSON_UNESCAPED_UNICODE);
+                return $this->sanitizeMessage((string) json_encode($json['errors'], JSON_UNESCAPED_UNICODE));
             }
         }
 
         $body = $response->body();
 
-        return $body !== '' ? $body : '(empty response)';
+        return $body !== '' ? $this->sanitizeMessage($body) : '(empty response)';
+    }
+
+    /**
+     * Strip control characters and cap the length of a server-supplied message
+     * before it lands in an exception message or a log line - the same hygiene
+     * already applied to failure_reason and the id fields, here closing the most
+     * common error path. Plain messages are returned unchanged.
+     */
+    private function sanitizeMessage(string $value): string
+    {
+        $clean = (string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $value);
+
+        return mb_substr($clean, 0, 500);
+    }
+
+    /**
+     * Accept a server-supplied id only if it matches the safe charset/length,
+     * otherwise drop it - never let a response field inject into a log line.
+     */
+    private function safeId(mixed $value): ?string
+    {
+        return is_string($value) && preg_match('/^[A-Za-z0-9._-]{8,64}$/', $value) === 1
+            ? $value
+            : null;
+    }
+
+    private function safeShort(mixed $value): ?string
+    {
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
+
+        $clean = (string) preg_replace('/[^A-Za-z0-9 _.\-]/', '', $value);
+
+        return $clean === '' ? null : mb_substr($clean, 0, 64);
     }
 
     /**
@@ -153,7 +249,17 @@ final class NotifierApiClient
             'X-Notifier-Timestamp' => $timestamp,
             'X-Notifier-Nonce' => $nonce,
             'X-Notifier-Signature' => hash_hmac('sha256', $timestamp."\n".$nonce, $hmacKey),
+            'X-Request-Id' => $this->currentRequestId(),
         ];
+    }
+
+    /**
+     * The pinned run id when inside a backup run, else a fresh per-call id so
+     * every request still carries a greppable correlation id.
+     */
+    private function currentRequestId(): string
+    {
+        return $this->requestId ?? (string) Str::uuid();
     }
 
     private function url(string $path): string

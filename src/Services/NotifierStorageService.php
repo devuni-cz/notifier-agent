@@ -100,7 +100,7 @@ final class NotifierStorageService
             $logger->info('➡️ file was sent');
             $logger->info('✅ END OF BACKUP');
         } catch (Throwable $th) {
-            $logger->emergency('❌ an error occurred while uploading a file', [
+            $logger->error('❌ an error occurred while uploading a file', [
                 'error' => $th->getMessage(),
                 'file_size' => filesize($path),
                 'php_file_upload_limit' => ini_get('upload_max_filesize'),

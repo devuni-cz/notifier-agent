@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+-   **End-to-end request correlation** — every HTTP call of a single backup run (init → chunks → finalize → status poll) now carries one shared `X-Request-Id`, so a run can be matched across the agent log and the control-plane log with a single `grep <request_id>`. Additive and backward-compatible: an un-upgraded server simply ignores the header.
+-   **Server error surfacing** — when the control plane returns a `5xx`, the agent reads the structured `error_id` / `request_id` from the response (body or `X-Request-Id` header) and appends them to the failure message and logs (e.g. `Failed to initialize upload: HTTP 500 - Internal Server Error (error_id=…, request_id=…)`), turning an opaque "Server Error" into a pointer straight to the matching server-side exception. All server-supplied fields (the message and the ids) are sanitized — control characters stripped, length capped — before they reach a log line; the token is never logged.
+-   **Structured upload logs** — chunked-upload log entries now include `stage` (`init_upload` / `send_chunk` / `finalize` / `poll_status`), `upload_id`, `attempt`, `chunk_number` and `status` for faster diagnosis.
+
+### Changed
+
+-   Upload failures are now logged at `error` level instead of `emergency` — a transient upload failure is no longer the highest severity, so genuine emergencies stand out.
+
 ## [1.5.0] - 2026-06-16
 
 ### Added

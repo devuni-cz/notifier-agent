@@ -213,3 +213,89 @@ describe('ChunkedUploadService::waitForCompletion', function () {
             ->toThrow(RuntimeException::class, 'did not finalize within 0s');
     });
 });
+
+describe('ChunkedUploadService request id correlation', function () {
+    beforeEach(function () {
+        config([
+            'notifier.backup_url' => 'https://notifier.example.com',
+            'notifier.backup_code' => 'super-secret-token',
+        ]);
+    });
+
+    it('sends the same X-Request-Id across init, chunk and finalize of one run', function () {
+        Http::fake([
+            '*/uploads/init' => Http::response(['upload_id' => 'abc-123'], 200),
+            '*/uploads/*/chunks/*' => Http::response([], 200),
+            '*/uploads/*/finalize' => Http::response(['status' => 'completed'], 200),
+        ]);
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'notifier_test_');
+        file_put_contents($tmpPath, 'backup payload');
+
+        try {
+            app(ChunkedUploadService::class)->upload($tmpPath, 'database');
+
+            $ids = [];
+            Http::assertSent(function ($request) use (&$ids) {
+                $ids[] = $request->header('X-Request-Id')[0] ?? '';
+
+                return true;
+            });
+
+            expect($ids)->toHaveCount(3)
+                ->and(array_unique($ids))->toHaveCount(1) // one shared id for the whole run
+                ->and(preg_match('/^[A-Za-z0-9._-]{8,64}$/', $ids[0]))->toBe(1);
+        } finally {
+            @unlink($tmpPath);
+        }
+    });
+
+    it('surfaces the server error_id and request_id in the thrown exception on a 5xx', function () {
+        Http::fake([
+            '*/uploads/init' => Http::response([
+                'type' => 'error',
+                'message' => 'Internal Server Error',
+                'error_id' => 'err-deadbeef',
+                'request_id' => 'req-cafebabe',
+            ], 500),
+        ]);
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'notifier_test_');
+        file_put_contents($tmpPath, 'backup payload');
+
+        try {
+            app(ChunkedUploadService::class)->upload($tmpPath, 'database');
+            $this->fail('Expected a RuntimeException to be thrown.');
+        } catch (RuntimeException $e) {
+            expect($e->getMessage())
+                ->toContain('Failed to initialize upload: HTTP 500')
+                ->toContain('error_id=err-deadbeef')
+                ->toContain('request_id=req-cafebabe')
+                // The token must never leak into the surfaced message.
+                ->not->toContain('super-secret-token');
+        } finally {
+            @unlink($tmpPath);
+        }
+    });
+
+    it('appends no id suffix against an old server that returns no ids', function () {
+        Http::fake([
+            '*/uploads/init' => Http::response(['message' => 'Server Error'], 500),
+        ]);
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'notifier_test_');
+        file_put_contents($tmpPath, 'backup payload');
+
+        try {
+            app(ChunkedUploadService::class)->upload($tmpPath, 'database');
+            $this->fail('Expected a RuntimeException to be thrown.');
+        } catch (RuntimeException $e) {
+            expect($e->getMessage())
+                ->toBe('Failed to initialize upload: HTTP 500 - Server Error')
+                ->not->toContain('error_id=')
+                ->not->toContain('request_id=');
+        } finally {
+            @unlink($tmpPath);
+        }
+    });
+});

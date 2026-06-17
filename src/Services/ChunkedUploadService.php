@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Devuni\Notifier\Services;
 
+use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 
 final class ChunkedUploadService
 {
+    /** Correlation id for the current backup run; null between runs. */
+    private ?string $requestId = null;
+
     public function __construct(
         private readonly NotifierApiClient $api,
         private readonly NotifierLoggerService $notifierLogger,
@@ -29,80 +33,95 @@ final class ChunkedUploadService
         // throws before any chunking work begins if NOTIFIER_URL is missing/insecure.
         $this->api->baseUrl();
 
-        $chunkSize = (int) config('notifier.chunk_size', 20 * 1024 * 1024);
-        $fileSize = filesize($path);
-
-        if ($fileSize === false) {
-            throw new RuntimeException('Failed to read file size: '.$path);
-        }
-
-        $checksum = hash_file('sha256', $path);
-
-        if ($checksum === false) {
-            throw new RuntimeException('Failed to compute file checksum: '.$path);
-        }
-
-        $totalChunks = (int) ceil($fileSize / $chunkSize);
-        $filename = basename($path);
-
-        $logger->info('📦 starting chunked upload', [
-            'file' => $filename,
-            'size' => $fileSize,
-            'chunks' => $totalChunks,
-            'chunk_size' => $chunkSize,
-        ]);
-
-        // Phase 1: Init upload
-        $uploadId = $this->initUpload($backupType, $filename, $fileSize, $totalChunks, $checksum);
-
-        $logger->info('✅ upload initialized', ['upload_id' => $uploadId]);
-
-        // Phase 2: Send chunks (streamed to temp files to avoid memory exhaustion)
-        $handle = fopen($path, 'rb');
-
-        if ($handle === false) {
-            throw new RuntimeException('Could not open file for reading: '.$path);
-        }
+        // One correlation id for the whole run (init -> chunks -> finalize -> poll),
+        // pinned on the client so every request carries the same X-Request-Id, and
+        // cleared in finally so it never bleeds into a later call on the singleton.
+        $this->requestId = (string) Str::uuid();
+        $this->api->withRequestId($this->requestId);
 
         try {
-            for ($chunkNumber = 1; $chunkNumber <= $totalChunks; $chunkNumber++) {
-                $tmpPath = tempnam(sys_get_temp_dir(), 'notifier_chunk_');
+            $chunkSize = (int) config('notifier.chunk_size', 20 * 1024 * 1024);
+            $fileSize = filesize($path);
 
-                if ($tmpPath === false) {
-                    throw new RuntimeException('Failed to create temporary file for chunk');
-                }
-
-                $tmpHandle = fopen($tmpPath, 'wb');
-
-                if ($tmpHandle === false) {
-                    @unlink($tmpPath);
-                    throw new RuntimeException('Failed to open temporary chunk file for writing');
-                }
-
-                $bytesCopied = stream_copy_to_stream($handle, $tmpHandle, $chunkSize);
-                fclose($tmpHandle);
-
-                if ($bytesCopied === false || $bytesCopied === 0) {
-                    @unlink($tmpPath);
-                    throw new RuntimeException("Failed to write chunk {$chunkNumber} to temporary file");
-                }
-
-                try {
-                    $this->sendChunk($uploadId, $chunkNumber, $tmpPath);
-                } finally {
-                    @unlink($tmpPath);
-                }
-
-                $logger->info("➡️ chunk {$chunkNumber}/{$totalChunks} sent");
+            if ($fileSize === false) {
+                throw new RuntimeException('Failed to read file size: '.$path);
             }
+
+            $checksum = hash_file('sha256', $path);
+
+            if ($checksum === false) {
+                throw new RuntimeException('Failed to compute file checksum: '.$path);
+            }
+
+            $totalChunks = (int) ceil($fileSize / $chunkSize);
+            $filename = basename($path);
+
+            $logger->info('📦 starting chunked upload', $this->logContext('init_upload', [
+                'file' => $filename,
+                'size' => $fileSize,
+                'chunks' => $totalChunks,
+                'chunk_size' => $chunkSize,
+            ]));
+
+            // Phase 1: Init upload
+            $uploadId = $this->initUpload($backupType, $filename, $fileSize, $totalChunks, $checksum);
+
+            $logger->info('✅ upload initialized', $this->logContext('init_upload', ['upload_id' => $uploadId]));
+
+            // Phase 2: Send chunks (streamed to temp files to avoid memory exhaustion)
+            $handle = fopen($path, 'rb');
+
+            if ($handle === false) {
+                throw new RuntimeException('Could not open file for reading: '.$path);
+            }
+
+            try {
+                for ($chunkNumber = 1; $chunkNumber <= $totalChunks; $chunkNumber++) {
+                    $tmpPath = tempnam(sys_get_temp_dir(), 'notifier_chunk_');
+
+                    if ($tmpPath === false) {
+                        throw new RuntimeException('Failed to create temporary file for chunk');
+                    }
+
+                    $tmpHandle = fopen($tmpPath, 'wb');
+
+                    if ($tmpHandle === false) {
+                        @unlink($tmpPath);
+                        throw new RuntimeException('Failed to open temporary chunk file for writing');
+                    }
+
+                    $bytesCopied = stream_copy_to_stream($handle, $tmpHandle, $chunkSize);
+                    fclose($tmpHandle);
+
+                    if ($bytesCopied === false || $bytesCopied === 0) {
+                        @unlink($tmpPath);
+                        throw new RuntimeException("Failed to write chunk {$chunkNumber} to temporary file");
+                    }
+
+                    try {
+                        $this->sendChunk($uploadId, $chunkNumber, $tmpPath);
+                    } finally {
+                        @unlink($tmpPath);
+                    }
+
+                    $logger->info("➡️ chunk {$chunkNumber}/{$totalChunks} sent", $this->logContext('send_chunk', [
+                        'upload_id' => $uploadId,
+                        'chunk_number' => $chunkNumber,
+                        'total_chunks' => $totalChunks,
+                    ]));
+                }
+            } finally {
+                fclose($handle);
+            }
+
+            // Phase 3: Finalize
+            $this->finalizeUpload($uploadId);
+
+            $logger->info('✅ chunked upload finalized', $this->logContext('finalize', ['upload_id' => $uploadId]));
         } finally {
-            fclose($handle);
+            $this->api->clearRequestId();
+            $this->requestId = null;
         }
-
-        // Phase 3: Finalize
-        $this->finalizeUpload($uploadId);
-
-        $logger->info('✅ chunked upload finalized');
     }
 
     private function initUpload(
@@ -121,8 +140,9 @@ final class ChunkedUploadService
         ], 30);
 
         if (! $response->successful()) {
+            $details = $this->api->errorDetails($response);
             throw new RuntimeException(
-                'Failed to initialize upload: HTTP '.$response->status().' - '.$this->api->formatError($response)
+                'Failed to initialize upload: HTTP '.$response->status().' - '.$details['message'].$this->failureSuffix($details)
             );
         }
 
@@ -172,6 +192,8 @@ final class ChunkedUploadService
                     return;
                 }
 
+                $details = $this->api->errorDetails($response);
+
                 // Retry 429 (rate limited) - it's transient, not a client mistake
                 if ($response->status() === 429) {
                     $lastException = new RuntimeException(
@@ -180,11 +202,11 @@ final class ChunkedUploadService
                 } elseif ($response->status() >= 400 && $response->status() < 500) {
                     // Don't retry other 4xx errors (client mistakes)
                     throw new RuntimeException(
-                        "Chunk {$chunkNumber} rejected: HTTP ".$response->status().' - '.$this->api->formatError($response)
+                        "Chunk {$chunkNumber} rejected: HTTP ".$response->status().' - '.$details['message'].$this->failureSuffix($details)
                     );
                 } else {
                     $lastException = new RuntimeException(
-                        "Chunk {$chunkNumber} failed: HTTP ".$response->status().' - '.$this->api->formatError($response)
+                        "Chunk {$chunkNumber} failed: HTTP ".$response->status().' - '.$details['message'].$this->failureSuffix($details)
                     );
                 }
             } catch (RuntimeException $e) {
@@ -194,9 +216,12 @@ final class ChunkedUploadService
             }
 
             if ($attempt < $maxAttempts) {
-                $logger->warning("⚠️ chunk {$chunkNumber} attempt {$attempt} failed, retrying...", [
+                $logger->warning("⚠️ chunk {$chunkNumber} attempt {$attempt} failed, retrying...", $this->logContext('send_chunk', [
+                    'upload_id' => $uploadId,
+                    'chunk_number' => $chunkNumber,
+                    'attempt' => $attempt,
                     'error' => $lastException->getMessage(),
-                ]);
+                ]));
                 usleep($retryDelayMs * 1000);
             }
         }
@@ -209,8 +234,9 @@ final class ChunkedUploadService
         $response = $this->api->post('/uploads/'.$uploadId.'/finalize', [], 60);
 
         if (! $response->successful()) {
+            $details = $this->api->errorDetails($response);
             throw new RuntimeException(
-                'Failed to finalize upload: HTTP '.$response->status().' - '.$this->api->formatError($response)
+                'Failed to finalize upload: HTTP '.$response->status().' - '.$details['message'].$this->failureSuffix($details)
             );
         }
 
@@ -253,10 +279,11 @@ final class ChunkedUploadService
                 $response = $this->api->getAbsolute($statusUrl, 30);
             } catch (Throwable $e) {
                 $consecutiveErrors++;
-                $logger->warning("⚠️ status poll failed (attempt {$consecutiveErrors})", [
+                $logger->warning("⚠️ status poll failed (attempt {$consecutiveErrors})", $this->logContext('poll_status', [
                     'upload_id' => $uploadId,
+                    'attempt' => $consecutiveErrors,
                     'error' => $e->getMessage(),
-                ]);
+                ]));
 
                 if ($consecutiveErrors >= 5) {
                     throw new RuntimeException(
@@ -271,8 +298,9 @@ final class ChunkedUploadService
                 $consecutiveErrors++;
 
                 if ($consecutiveErrors >= 5) {
+                    $details = $this->api->errorDetails($response);
                     throw new RuntimeException(
-                        'Status polling kept returning HTTP '.$response->status().' - '.$this->api->formatError($response),
+                        'Status polling kept returning HTTP '.$response->status().' - '.$details['message'].$this->failureSuffix($details),
                     );
                 }
 
@@ -284,9 +312,10 @@ final class ChunkedUploadService
             $status = $response->json('status');
             $isTerminal = (bool) $response->json('is_terminal');
 
-            $logger->info("➡️ upload status: {$status}", [
+            $logger->info("➡️ upload status: {$status}", $this->logContext('poll_status', [
                 'upload_id' => $uploadId,
-            ]);
+                'status' => $status,
+            ]));
 
             if (! $isTerminal) {
                 continue;
@@ -306,6 +335,45 @@ final class ChunkedUploadService
         throw new RuntimeException(
             "Backup upload did not finalize within {$maxWaitSeconds}s - server may still be processing it. Check the dashboard.",
         );
+    }
+
+    /**
+     * Base log context for the run: the stage and the correlation id, merged with
+     * per-call extras. `request_id` matches the X-Request-Id sent to the server,
+     * so `grep <request_id>` returns the whole run on both sides.
+     *
+     * @param  array<string, mixed>  $extra
+     * @return array<string, mixed>
+     */
+    private function logContext(string $stage, array $extra = []): array
+    {
+        return array_merge([
+            'stage' => $stage,
+            'request_id' => $this->requestId,
+        ], $extra);
+    }
+
+    /**
+     * A " (error_id=..., request_id=...)" suffix built only from the server's
+     * sanitized ids, appended to a failure message so it surfaces in the CLI
+     * output and the error log. Empty against an old server that returns no ids
+     * (message stays byte-for-byte as before). The token is never part of these.
+     *
+     * @param  array{message: string, error_id: ?string, request_id: ?string, type: ?string}  $details
+     */
+    private function failureSuffix(array $details): string
+    {
+        $parts = [];
+
+        if ($details['error_id'] !== null) {
+            $parts[] = 'error_id='.$details['error_id'];
+        }
+
+        if ($details['request_id'] !== null) {
+            $parts[] = 'request_id='.$details['request_id'];
+        }
+
+        return $parts === [] ? '' : ' ('.implode(', ', $parts).')';
     }
 
     /**

@@ -157,4 +157,109 @@ describe('NotifierApiClient::formatError', function () {
 
         expect(apiClient()->formatError($response))->toBe('boom');
     });
+
+    it('strips control characters out of a server-supplied message', function () {
+        Http::fake(['*' => Http::response(['message' => "line1\nline2\ttabbed"], 500)]);
+
+        $message = apiClient()->formatError(apiClient()->get('/x'));
+
+        expect($message)->toContain('line1 line2 tabbed')
+            ->not->toContain("\n")
+            ->and($message)->not->toContain("\t");
+    });
+});
+
+describe('NotifierApiClient request id correlation', function () {
+    it('sends a valid X-Request-Id on every request even without a pinned id', function () {
+        Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+        apiClient()->get('/announcements');
+
+        Http::assertSent(function ($request) {
+            $id = $request->header('X-Request-Id')[0] ?? '';
+
+            return preg_match('/^[A-Za-z0-9._-]{8,64}$/', $id) === 1;
+        });
+    });
+
+    it('reuses the pinned run id across every request of the run', function () {
+        Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+        $client = apiClient();
+        $client->withRequestId('run-12345678');
+        $client->get('/a');
+        $client->post('/b');
+
+        $ids = [];
+        Http::assertSent(function ($request) use (&$ids) {
+            $ids[] = $request->header('X-Request-Id')[0] ?? '';
+
+            return true;
+        });
+
+        expect($ids)->toHaveCount(2)
+            ->and($ids[0])->toBe('run-12345678')
+            ->and($ids[1])->toBe('run-12345678');
+    });
+
+    it('uses a fresh per-call id again after the run id is cleared', function () {
+        Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+        $client = apiClient();
+        $client->withRequestId('run-12345678');
+        $client->get('/a');
+        $client->clearRequestId();
+        $client->get('/b');
+
+        $ids = [];
+        Http::assertSent(function ($request) use (&$ids) {
+            $ids[] = $request->header('X-Request-Id')[0] ?? '';
+
+            return true;
+        });
+
+        expect($ids[0])->toBe('run-12345678')
+            ->and($ids[1])->not->toBe('run-12345678');
+    });
+
+    it('rejects a malformed request id', function () {
+        expect(fn () => apiClient()->withRequestId("bad id\nwith spaces"))
+            ->toThrow(RuntimeException::class, 'Invalid request id');
+    });
+});
+
+describe('NotifierApiClient::errorDetails', function () {
+    it('surfaces the server error_id and request_id from the JSON body', function () {
+        Http::fake(['*' => Http::response([
+            'type' => 'error',
+            'message' => 'Internal Server Error',
+            'error_id' => 'err-abcdef12',
+            'request_id' => 'req-abcdef12',
+        ], 500)]);
+
+        $details = apiClient()->errorDetails(apiClient()->get('/x'));
+
+        expect($details['message'])->toBe('Internal Server Error')
+            ->and($details['error_id'])->toBe('err-abcdef12')
+            ->and($details['request_id'])->toBe('req-abcdef12')
+            ->and($details['type'])->toBe('error');
+    });
+
+    it('falls back to the X-Request-Id header when the body omits request_id', function () {
+        Http::fake(['*' => Http::response(['message' => 'boom'], 500, ['X-Request-Id' => 'hdr-abcdef12'])]);
+
+        $details = apiClient()->errorDetails(apiClient()->get('/x'));
+
+        expect($details['request_id'])->toBe('hdr-abcdef12')
+            ->and($details['error_id'])->toBeNull();
+    });
+
+    it('drops malformed ids so they cannot inject into log lines', function () {
+        Http::fake(['*' => Http::response(['message' => 'boom', 'error_id' => "x\ninjection", 'request_id' => 'short'], 500)]);
+
+        $details = apiClient()->errorDetails(apiClient()->get('/x'));
+
+        expect($details['error_id'])->toBeNull()
+            ->and($details['request_id'])->toBeNull();
+    });
 });
