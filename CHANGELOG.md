@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-06-17
+
 ### Security
 
 -   **Hardened the v1.6.0 correlation logging against injection.** The request-id validation regex now uses the `/D` anchor so a trailing newline can no longer slip through `withRequestId()` / the response-field guard, and the server-supplied upload `status` is control-character-stripped and length-capped before it is logged (the one server string the v1.6.0 work left raw).
