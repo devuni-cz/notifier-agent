@@ -202,6 +202,13 @@ describe('NotifierApiClient request id correlation', function () {
             ->and($ids[1])->toBe('run-12345678');
     });
 
+    it('rejects a pinned run id with a trailing newline (regex /D anchor)', function () {
+        // Without the /D modifier PCRE `$` matches before a final newline, so
+        // "run-12345678\n" would be accepted and inject a newline downstream.
+        expect(fn () => apiClient()->withRequestId("run-12345678\n"))
+            ->toThrow(RuntimeException::class, 'Invalid request id');
+    });
+
     it('uses a fresh per-call id again after the run id is cleared', function () {
         Http::fake(['*' => Http::response(['ok' => true], 200)]);
 

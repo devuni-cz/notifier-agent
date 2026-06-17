@@ -41,7 +41,9 @@ final class NotifierApiClient
      */
     public function withRequestId(string $requestId): void
     {
-        if (preg_match('/^[A-Za-z0-9._-]{8,64}$/', $requestId) !== 1) {
+        // The /D modifier is required: without it `$` also matches before a
+        // trailing newline, letting "validid12\n" through as a "valid" id.
+        if (preg_match('/^[A-Za-z0-9._-]{8,64}$/D', $requestId) !== 1) {
             throw new RuntimeException('Invalid request id: '.$requestId);
         }
 
@@ -197,7 +199,7 @@ final class NotifierApiClient
      */
     private function safeId(mixed $value): ?string
     {
-        return is_string($value) && preg_match('/^[A-Za-z0-9._-]{8,64}$/', $value) === 1
+        return is_string($value) && preg_match('/^[A-Za-z0-9._-]{8,64}$/D', $value) === 1
             ? $value
             : null;
     }

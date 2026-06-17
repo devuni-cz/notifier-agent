@@ -195,6 +195,19 @@ describe('ChunkedUploadService::waitForCompletion', function () {
         }
     });
 
+    it('sanitizes the server-supplied status so a crafted value cannot forge completion', function () {
+        // A compromised server returning "completed\n<forged log line>" must not
+        // be accepted as a successful backup: the status is control-char-stripped
+        // before the === 'completed' check (and before it reaches the log line),
+        // so the laced value no longer equals 'completed' and falls through.
+        Http::fake([
+            '*/status' => Http::response(['status' => "completed\nINJECTED ENTRY", 'is_terminal' => true], 200),
+        ]);
+
+        expect(fn () => invokeWaitForCompletion('https://notifier.example.com/uploads/abc/status'))
+            ->toThrow(RuntimeException::class);
+    });
+
     it('gives up after repeated polling errors', function () {
         Http::fake([
             '*/status' => Http::response('upstream exploded', 500),

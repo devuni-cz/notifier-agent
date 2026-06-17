@@ -309,7 +309,14 @@ final class ChunkedUploadService
 
             $consecutiveErrors = 0;
 
+            // status is server-supplied and is logged below; strip control
+            // characters and cap its length so a compromised control plane
+            // can't forge a log line through it. A legitimate status (e.g.
+            // "completed") is unchanged, so the terminal check stays correct.
             $status = $response->json('status');
+            if (is_string($status)) {
+                $status = mb_substr((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $status), 0, 64);
+            }
             $isTerminal = (bool) $response->json('is_terminal');
 
             $logger->info("➡️ upload status: {$status}", $this->logContext('poll_status', [
