@@ -31,7 +31,7 @@ describe('NotifierCheckCommand', function () {
         it('has correct description', function () {
             $command = new NotifierCheckCommand;
 
-            expect($command->getDescription())->toBe('Check if Notifier package is configured correctly');
+            expect($command->getDescription())->toBe('Verify the Notifier agent configuration and server connectivity');
         });
     });
 

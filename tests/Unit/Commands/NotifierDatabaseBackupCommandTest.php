@@ -102,7 +102,7 @@ describe('NotifierDatabaseBackupCommand', function () {
             Config::set('notifier.backup_zip_password', 'something');
 
             $this->artisan('notifier:database-backup')
-                ->expectsOutputToContain('The following environment variables are missing or empty:')
+                ->expectsOutputToContain('Missing environment variables:')
                 ->expectsOutputToContain('• NOTIFIER_BACKUP_CODE')
                 ->expectsOutputToContain('• NOTIFIER_URL')
                 ->assertExitCode(1);
@@ -114,7 +114,7 @@ describe('NotifierDatabaseBackupCommand', function () {
             Config::set('notifier.backup_zip_password', '');
 
             $this->artisan('notifier:database-backup')
-                ->expectsOutputToContain('ERROR')
+                ->expectsOutputToContain('RESULT')
                 ->expectsOutputToContain('• NOTIFIER_BACKUP_PASSWORD')
                 ->assertExitCode(1);
         });
@@ -123,7 +123,7 @@ describe('NotifierDatabaseBackupCommand', function () {
             $command = new NotifierDatabaseBackupCommand;
 
             expect($command->getName())->toBe('notifier:database-backup');
-            expect($command->getDescription())->toBe('Command for creating a database backup');
+            expect($command->getDescription())->toBe('Dump the database and upload an encrypted backup to the Notifier server');
         });
     });
 
@@ -138,12 +138,13 @@ describe('NotifierDatabaseBackupCommand', function () {
             Http::assertSent(fn ($request) => str_contains($request->url(), '/finalize'));
         });
 
-        it('surfaces exceptions from backup creation (handle has no try/catch)', function () {
+        it('reports a clean failure (exit 1) instead of a stack trace when backup creation throws', function () {
             // A dumper that writes no file makes createDatabaseBackup() throw.
             bindFakeDatabaseService(null);
 
-            expect(fn () => $this->artisan('notifier:database-backup'))
-                ->toThrow(RuntimeException::class, 'SQL dump file was not created');
+            $this->artisan('notifier:database-backup')
+                ->expectsOutputToContain('SQL dump file was not created')
+                ->assertExitCode(1);
         });
 
         it('records the last database backup time for the heartbeat manifest on success', function () {
@@ -157,20 +158,20 @@ describe('NotifierDatabaseBackupCommand', function () {
     });
 
     describe('output formatting', function () {
-        it('displays the start and end backup markers', function () {
+        it('reports creation and a successful upload', function () {
             bindFakeDatabaseService();
 
             $this->artisan('notifier:database-backup')
-                ->expectsOutputToContain('⚙️  STARTING NEW BACKUP ⚙️')
-                ->expectsOutputToContain('✅ End of backup')
+                ->expectsOutputToContain('Creating backup archive')
+                ->expectsOutputToContain('Backup uploaded successfully')
                 ->assertExitCode(0);
         });
 
-        it('shows the created backup path in the success message', function () {
+        it('confirms the archive was created', function () {
             bindFakeDatabaseService();
 
             $this->artisan('notifier:database-backup')
-                ->expectsOutputToContain('✅ Backup file created successfully at: ')
+                ->expectsOutputToContain('Backup archive created')
                 ->assertExitCode(0);
         });
     });

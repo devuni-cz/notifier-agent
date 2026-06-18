@@ -23,15 +23,17 @@ use Illuminate\Support\Facades\Http;
 /**
  * Bind a storage service whose archiving behaviour we control.
  *
- *   - $throw = null               -> the zip creator writes a >=100 byte archive
+ *   - $throw = null               -> the zip creator writes a $bytes-long archive
  *   - $throw = RuntimeException    -> the zip creator throws it (propagates unless
  *                                     the message starts with "No files to backup")
+ *   - $bytes < 100                 -> createStorageBackup() treats the archive as
+ *                                     too small/corrupt and returns '' (no upload)
  */
-function bindFakeStorageService(?RuntimeException $throw = null): void
+function bindFakeStorageService(?RuntimeException $throw = null, int $bytes = 550): void
 {
-    $zip = new class($throw) implements ZipCreatorInterface
+    $zip = new class($throw, $bytes) implements ZipCreatorInterface
     {
-        public function __construct(public ?RuntimeException $throw) {}
+        public function __construct(public ?RuntimeException $throw, public int $bytes) {}
 
         public static function isAvailable(): bool
         {
@@ -44,8 +46,8 @@ function bindFakeStorageService(?RuntimeException $throw = null): void
                 throw $this->throw;
             }
 
-            // Must be >= 100 bytes or sendStorageBackup() skips the upload.
-            file_put_contents($zipPath, str_repeat('ZIP-ARCHIVE', 50));
+            // >= 100 bytes is a valid archive; < 100 bytes is treated as corrupt.
+            file_put_contents($zipPath, str_repeat('Z', $this->bytes));
 
             return 1;
         }
@@ -89,7 +91,7 @@ describe('NotifierStorageBackupCommand', function () {
             Config::set('notifier.backup_zip_password', '');
 
             $this->artisan('notifier:storage-backup')
-                ->expectsOutputToContain('The following environment variables are missing or empty:')
+                ->expectsOutputToContain('Missing environment variables:')
                 ->expectsOutputToContain('• NOTIFIER_BACKUP_CODE')
                 ->expectsOutputToContain('• NOTIFIER_URL')
                 ->expectsOutputToContain('• NOTIFIER_BACKUP_PASSWORD')
@@ -102,7 +104,7 @@ describe('NotifierStorageBackupCommand', function () {
             Config::set('notifier.backup_zip_password', '');
 
             $this->artisan('notifier:storage-backup')
-                ->expectsOutputToContain('ERROR')
+                ->expectsOutputToContain('RESULT')
                 ->expectsOutputToContain('• NOTIFIER_BACKUP_PASSWORD')
                 ->assertExitCode(1);
         });
@@ -111,7 +113,7 @@ describe('NotifierStorageBackupCommand', function () {
             $command = new NotifierStorageBackupCommand;
 
             expect($command->getName())->toBe('notifier:storage-backup');
-            expect($command->getDescription())->toBe('Command for creating a storage backup');
+            expect($command->getDescription())->toBe('Archive the public storage and upload an encrypted backup to the Notifier server');
         });
     });
 
@@ -125,11 +127,39 @@ describe('NotifierStorageBackupCommand', function () {
             Http::assertSent(fn ($request) => str_contains($request->url(), '/finalize'));
         });
 
-        it('surfaces exceptions from backup creation (handle has no try/catch)', function () {
+        it('reports a clean failure (exit 1) instead of a stack trace when backup creation throws', function () {
             bindFakeStorageService(new RuntimeException('zip archiver exploded'));
 
-            expect(fn () => $this->artisan('notifier:storage-backup'))
-                ->toThrow(RuntimeException::class, 'zip archiver exploded');
+            $this->artisan('notifier:storage-backup')
+                ->expectsOutputToContain('Backup failed: zip archiver exploded')
+                ->assertExitCode(1);
+        });
+
+        it('skips with a warning (exit 0) and does not stamp the heartbeat when the source is empty', function () {
+            Cache::forget(HeartbeatService::LAST_STORAGE_BACKUP_KEY);
+            // A zip creator that reports "No files to backup" makes createStorageBackup() return ''.
+            bindFakeStorageService(new RuntimeException('No files to backup in the source directory'));
+
+            $this->artisan('notifier:storage-backup')
+                ->expectsOutputToContain('Nothing to back up')
+                ->assertExitCode(0);
+
+            expect(Cache::get(HeartbeatService::LAST_STORAGE_BACKUP_KEY))->toBeNull();
+        });
+
+        it('skips with a warning (exit 0) and does not stamp the heartbeat when the archive is too small/corrupt', function () {
+            Cache::forget(HeartbeatService::LAST_STORAGE_BACKUP_KEY);
+            // A non-empty source that yields a <100-byte archive (truncated/corrupt
+            // write) must NOT report success or stamp the heartbeat - the old code
+            // silently skipped the upload yet still reported a green backup.
+            bindFakeStorageService(bytes: 8);
+
+            $this->artisan('notifier:storage-backup')
+                ->expectsOutputToContain('Nothing to back up')
+                ->assertExitCode(0);
+
+            expect(Cache::get(HeartbeatService::LAST_STORAGE_BACKUP_KEY))->toBeNull();
+            Http::assertNotSent(fn ($request) => str_contains($request->url(), '/uploads/init'));
         });
 
         it('records the last storage backup time for the heartbeat manifest on success', function () {
@@ -147,8 +177,8 @@ describe('NotifierStorageBackupCommand', function () {
             bindFakeStorageService();
 
             $this->artisan('notifier:storage-backup')
-                ->expectsOutputToContain('⚙️  STARTING NEW BACKUP ⚙️')
-                ->expectsOutputToContain('✅ End of backup')
+                ->expectsOutputToContain('Creating backup archive')
+                ->expectsOutputToContain('Backup uploaded successfully')
                 ->assertExitCode(0);
         });
 
@@ -156,7 +186,7 @@ describe('NotifierStorageBackupCommand', function () {
             bindFakeStorageService();
 
             $this->artisan('notifier:storage-backup')
-                ->expectsOutputToContain('✅ Backup file created successfully at: ')
+                ->expectsOutputToContain('Backup archive created')
                 ->assertExitCode(0);
         });
     });
@@ -171,7 +201,7 @@ describe('NotifierStorageBackupCommand', function () {
         it('has correct description property', function () {
             $command = new NotifierStorageBackupCommand;
 
-            expect($command->getDescription())->toBe('Command for creating a storage backup');
+            expect($command->getDescription())->toBe('Archive the public storage and upload an encrypted backup to the Notifier server');
         });
     });
 });

@@ -5,19 +5,18 @@ declare(strict_types=1);
 namespace Devuni\Notifier\Commands;
 
 use Devuni\Notifier\Traits\DisplayHelperTrait;
+use Devuni\Notifier\Traits\RendersReportTrait;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 
 use function Laravel\Prompts\confirm;
-use function Laravel\Prompts\error;
-use function Laravel\Prompts\info;
 use function Laravel\Prompts\password;
 use function Laravel\Prompts\text;
-use function Laravel\Prompts\warning;
 
 final class NotifierInstallCommand extends Command
 {
     use DisplayHelperTrait;
+    use RendersReportTrait;
 
     /**
      * Minimum length for the backup ZIP password. It encrypts the entire
@@ -34,7 +33,7 @@ final class NotifierInstallCommand extends Command
 
     protected $signature = 'notifier:install {--force : Overwrites existing environment variables}';
 
-    protected $description = 'Configure environment variables for Notifier package';
+    protected $description = 'Configure the Notifier agent credentials in your .env file';
 
     /**
      * Validate the strength of a manually-entered backup password. Returns an
@@ -53,21 +52,23 @@ final class NotifierInstallCommand extends Command
         return null;
     }
 
-    public function handle()
+    public function handle(): int
     {
+        $this->displayNotifierHeader('Install');
+
         if ($this->ifAlreadyInstalled()) {
-            error('The Notifier configuration already exists. Use --force to overwrite.');
+            $this->failLine('The Notifier configuration already exists. Use --force to overwrite.');
+            $this->newLine();
 
             return self::FAILURE;
         }
-
-        $this->displayNotifierHeader('Install');
 
         if ($this->ensureEnvFileExists() === self::FAILURE) {
             return self::FAILURE;
         }
 
-        info('🔧 Please provide the required environment values:');
+        $this->line('<fg=yellow;options=bold>Please provide the required environment values:</>');
+        $this->newLine();
 
         $backupCode = text(
             label: 'NOTIFIER_BACKUP_CODE',
@@ -83,8 +84,8 @@ final class NotifierInstallCommand extends Command
 
         if (confirm(label: 'Generate a strong backup password automatically?', default: true)) {
             $backupPassword = bin2hex(random_bytes(24)); // 48 hex chars
-            warning('Store this backup password securely - it is required to restore (decrypt) a backup:');
-            info($backupPassword);
+            $this->warnLine('Store this backup password securely - it is required to restore (decrypt) a backup:');
+            $this->line("   <fg=cyan>{$backupPassword}</>");
         } else {
             $backupPassword = password(
                 label: 'NOTIFIER_BACKUP_PASSWORD',
@@ -100,29 +101,42 @@ final class NotifierInstallCommand extends Command
             'NOTIFIER_BACKUP_PASSWORD' => $backupPassword,
         ]);
 
-        info('Notifier environment configuration was saved successfully!');
+        $this->newLine();
+        $this->passLine('Configuration saved to .env');
+        $this->detail('NOTIFIER_BACKUP_CODE', $this->maskValue($backupCode));
+        $this->detail('NOTIFIER_URL', '<fg=cyan>'.$backupUrl.'</>');
+        $this->detail('NOTIFIER_BACKUP_PASSWORD', $this->maskValue($backupPassword));
+        $this->hint('Next: run <fg=cyan>php artisan notifier:check</> to verify the configuration.');
+        $this->record('Configuration', self::STATUS_PASS);
 
-        return self::SUCCESS;
+        return $this->renderReportSummary(
+            'Notifier agent configured. Run notifier:check to verify.',
+            '',
+            'Configuration could not be saved.',
+        );
     }
 
     private function ensureEnvFileExists(): int
     {
-        if (! File::exists(base_path('.env'))) {
-            warning('Missing configuration file: .env');
-            $this->line('<fg=gray>🔹 This package requires an <fg=green>.env</> file to store environment settings.</>');
-            $this->line('<fg=gray>🔹 You can create it from the template: <fg=green>.env.example</>');
+        if (File::exists(base_path('.env'))) {
+            return self::SUCCESS;
+        }
+
+        $this->warnLine('Missing configuration file: .env');
+        $this->infoLine('This package needs an .env file to store environment settings.');
+        $this->hint('It can be created from the template .env.example.');
+        $this->newLine();
+
+        if (! confirm('Do you want to create .env from .env.example?', default: true)) {
+            $this->failLine('Installation aborted! .env file is required.');
             $this->newLine();
 
-            if (confirm('Do you want to create .env from .env.example?', default: true)) {
-                File::copy(base_path('.env.example'), base_path('.env'));
-                info('.env file has been created.');
-                $this->newLine();
-            } else {
-                error('Installation aborted! .env file is required.');
-
-                return self::FAILURE;
-            }
+            return self::FAILURE;
         }
+
+        File::copy(base_path('.env.example'), base_path('.env'));
+        $this->passLine('.env file has been created.');
+        $this->newLine();
 
         return self::SUCCESS;
     }

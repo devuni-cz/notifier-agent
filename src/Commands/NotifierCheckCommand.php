@@ -13,6 +13,7 @@ use Devuni\Notifier\Services\NotifierLoggerService;
 use Devuni\Notifier\Services\Zip\CliZipCreator;
 use Devuni\Notifier\Services\Zip\PhpZipCreator;
 use Devuni\Notifier\Traits\DisplayHelperTrait;
+use Devuni\Notifier\Traits\RendersReportTrait;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -22,12 +23,11 @@ use Throwable;
 final class NotifierCheckCommand extends Command
 {
     use DisplayHelperTrait;
+    use RendersReportTrait;
 
     protected $signature = 'notifier:check';
 
-    protected $description = 'Check if Notifier package is configured correctly';
-
-    private bool $hasErrors = false;
+    protected $description = 'Verify the Notifier agent configuration and server connectivity';
 
     public function handle(NotifierConfigService $configService, NotifierLoggerService $notifierLogger): int
     {
@@ -42,19 +42,11 @@ final class NotifierCheckCommand extends Command
         $this->checkQueueConfiguration();
         $this->checkBackupUrlReachability();
 
-        $this->newLine();
-
-        if ($this->hasErrors) {
-            $this->line('<bg=red;fg=white;options=bold> RESULT </> <fg=red>Some checks failed. Please fix the issues above.</>');
-            $this->newLine();
-
-            return self::FAILURE;
-        }
-
-        $this->line('<bg=green;fg=white;options=bold> RESULT </> <fg=green>All checks passed! Notifier package is ready to use.</>');
-        $this->newLine();
-
-        return self::SUCCESS;
+        return $this->renderReportSummary(
+            'All checks passed! Notifier agent is ready to use.',
+            'Ready to use, but some checks need attention.',
+            'Some checks failed. Please fix the issues above.',
+        );
     }
 
     /**
@@ -62,22 +54,24 @@ final class NotifierCheckCommand extends Command
      */
     private function checkEnvironmentVariables(NotifierConfigService $configService): void
     {
-        $this->line('<fg=yellow;options=bold>🔍 Checking environment variables...</>');
+        $this->section('environment variables');
 
         $missing = $configService->checkEnvironment();
 
         if (empty($missing)) {
-            $this->line('   <fg=green>✓</> All required environment variables are configured');
+            $this->passLine('All required environment variables are configured');
             $this->showConfiguredValues();
-        } else {
-            $this->hasErrors = true;
-            $this->line('   <fg=red>✗</> Missing environment variables:');
-            foreach ($missing as $variable) {
-                $this->line("      <fg=red>•</> {$variable}");
-            }
-            $this->line('   <fg=gray>→ Run: php artisan notifier:install</>');
+            $this->record('Environment variables', self::STATUS_PASS);
+
+            return;
         }
-        $this->newLine();
+
+        $this->failLine('Missing environment variables:');
+        foreach ($missing as $variable) {
+            $this->line("        <fg=red>•</> {$variable}");
+        }
+        $this->hint('Run: php artisan notifier:install');
+        $this->record('Environment variables', self::STATUS_FAIL);
     }
 
     /**
@@ -85,27 +79,9 @@ final class NotifierCheckCommand extends Command
      */
     private function showConfiguredValues(): void
     {
-        $backupCode = config('notifier.backup_code');
-        $backupUrl = config('notifier.backup_url');
-        $backupPassword = config('notifier.backup_zip_password');
-
-        $this->line('   <fg=gray>NOTIFIER_BACKUP_CODE:</> '.$this->maskValue($backupCode));
-        $this->line('   <fg=gray>NOTIFIER_URL:</> '.$backupUrl);
-        $this->line('   <fg=gray>NOTIFIER_BACKUP_PASSWORD:</> '.$this->maskValue($backupPassword));
-    }
-
-    /**
-     * Mask a secret for display. We only report presence + length - never any
-     * plaintext characters - so the shared secret can't leak into terminal
-     * scrollback or CI logs from a diagnostic command.
-     */
-    private function maskValue(?string $value): string
-    {
-        if (empty($value)) {
-            return '<fg=red>(empty)</>';
-        }
-
-        return '<fg=green>set</> <fg=gray>('.mb_strlen($value).' chars)</>';
+        $this->detail('NOTIFIER_BACKUP_CODE', $this->maskValue(config('notifier.backup_code')));
+        $this->detail('NOTIFIER_URL', '<fg=cyan>'.(config('notifier.backup_url') ?: '(empty)').'</>');
+        $this->detail('NOTIFIER_BACKUP_PASSWORD', $this->maskValue(config('notifier.backup_zip_password')));
     }
 
     /**
@@ -113,18 +89,18 @@ final class NotifierCheckCommand extends Command
      */
     private function checkDatabaseConnection(): void
     {
-        $this->line('<fg=yellow;options=bold>🔍 Checking database connection...</>');
+        $this->section('database connection');
 
         try {
             DB::connection()->getPdo();
             $databaseName = DB::connection()->getDatabaseName();
-            $this->line("   <fg=green>✓</> Connected to database: <fg=cyan>{$databaseName}</>");
+            $this->passLine("Connected to database: <fg=cyan>{$databaseName}</>");
+            $this->record('Database connection', self::STATUS_PASS);
         } catch (Throwable $e) {
-            $this->hasErrors = true;
-            $this->line('   <fg=red>✗</> Database connection failed');
-            $this->line("   <fg=gray>→ Error: {$e->getMessage()}</>");
+            $this->failLine('Database connection failed');
+            $this->hint("Error: {$e->getMessage()}");
+            $this->record('Database connection', self::STATUS_FAIL);
         }
-        $this->newLine();
     }
 
     /**
@@ -132,27 +108,36 @@ final class NotifierCheckCommand extends Command
      */
     private function checkStorageDirectories(): void
     {
-        $this->line('<fg=yellow;options=bold>🔍 Checking storage directories...</>');
+        $this->section('storage directories');
 
         $directories = [
             'Backup directory' => storage_path('app/private'),
             'Public storage' => storage_path('app/public'),
         ];
 
+        $status = self::STATUS_PASS;
+
         foreach ($directories as $name => $path) {
-            if (File::isDirectory($path)) {
-                if (is_writable($path)) {
-                    $this->line("   <fg=green>✓</> {$name}: <fg=cyan>{$path}</>");
-                } else {
-                    $this->hasErrors = true;
-                    $this->line("   <fg=red>✗</> {$name} is not writable: <fg=cyan>{$path}</>");
-                }
-            } else {
-                $this->line("   <fg=yellow>⚠</> {$name} does not exist: <fg=cyan>{$path}</>");
-                $this->line('      <fg=gray>→ Will be created automatically during backup</>');
+            if (! File::isDirectory($path)) {
+                $this->warnLine("{$name} does not exist: <fg=cyan>{$path}</>");
+                $this->hint('Will be created automatically during backup');
+                $status = $this->worst($status, self::STATUS_WARN);
+
+                continue;
             }
+
+            if (is_writable($path)) {
+                $this->passLine("{$name}: <fg=cyan>{$path}</>");
+
+                continue;
+            }
+
+            $this->failLine("{$name} is not writable: <fg=cyan>{$path}</>");
+            $this->hint('Grant write access to the web user (chown / chmod) for this path');
+            $status = self::STATUS_FAIL;
         }
-        $this->newLine();
+
+        $this->record('Storage directories', $status);
     }
 
     /**
@@ -160,12 +145,12 @@ final class NotifierCheckCommand extends Command
      */
     private function checkDatabaseDumpTool(): void
     {
-        $this->line('<fg=yellow;options=bold>🔍 Checking database dump tool...</>');
+        $this->section('database dump tool');
 
         $connection = config('notifier.database_connection') ?: config('database.default');
         $driver = config("database.connections.{$connection}.driver");
 
-        $this->line("   <fg=gray>Connection:</> <fg=cyan>{$connection}</> <fg=gray>(driver: {$driver})</>");
+        $this->detail('Connection', "<fg=cyan>{$connection}</> <fg=gray>(driver: {$driver})</>");
 
         try {
             $dumper = app(DatabaseDumperInterface::class);
@@ -175,9 +160,8 @@ final class NotifierCheckCommand extends Command
                 $dumper = $dumper->resolve();
             }
         } catch (Throwable $e) {
-            $this->hasErrors = true;
-            $this->line('   <fg=red>✗</> '.$e->getMessage());
-            $this->newLine();
+            $this->failLine($e->getMessage());
+            $this->record('Database dump tool', self::STATUS_FAIL);
 
             return;
         }
@@ -189,45 +173,50 @@ final class NotifierCheckCommand extends Command
         };
 
         if ($available) {
-            $this->line('   <fg=green>✓</> '.$dumper->describe());
-        } else {
-            $this->hasErrors = true;
-            $hint = match (true) {
-                $dumper instanceof MysqlDumper => 'Install MySQL client tools (e.g. `apt install mysql-client` or `mariadb-client`)',
-                $dumper instanceof PostgresDumper => 'Install PostgreSQL client tools (`apt install postgresql-client`) or YugabyteDB tools',
-                default => 'No dump tool available for this driver',
-            };
-            $this->line('   <fg=red>✗</> Required dump binary is not available on PATH');
-            $this->line("   <fg=gray>→ {$hint}</>");
+            $this->passLine($dumper->describe());
+            $this->record('Database dump tool', self::STATUS_PASS);
+
+            return;
         }
 
-        $this->newLine();
+        $hint = match (true) {
+            $dumper instanceof MysqlDumper => 'Install MySQL client tools (e.g. `apt install mysql-client` or `mariadb-client`)',
+            $dumper instanceof PostgresDumper => 'Install PostgreSQL client tools (`apt install postgresql-client`) or YugabyteDB tools',
+            default => 'No dump tool available for this driver',
+        };
+        $this->failLine('Required dump binary is not available on PATH');
+        $this->hint($hint);
+        $this->record('Database dump tool', self::STATUS_FAIL);
     }
 
     private function checkZipAvailability(): void
     {
-        $this->line('<fg=yellow;options=bold>🔍 Checking ZIP archive tools...</>');
+        $this->section('ZIP archive tools');
 
         $strategy = config('notifier.zip_strategy', 'auto');
         $cliAvailable = CliZipCreator::isAvailable();
         $phpAvailable = PhpZipCreator::isAvailable();
 
+        $status = self::STATUS_PASS;
+
         if ($cliAvailable) {
-            $this->line('   <fg=green>✓</> CLI 7z is available (recommended for production)');
+            $this->passLine('CLI 7z is available (recommended for production)');
         } else {
-            $this->line('   <fg=yellow>⚠</> CLI 7z is not installed');
-            $this->line('   <fg=gray>→ Install: sudo apt install p7zip-full</>');
+            $this->warnLine('CLI 7z is not installed');
+            $this->hint('Install: sudo apt install p7zip-full');
+            $status = $this->worst($status, self::STATUS_WARN);
         }
 
         if ($phpAvailable) {
-            $this->line('   <fg=green>✓</> PHP ZIP extension is loaded (fallback)');
+            $this->passLine('PHP ZIP extension is loaded (fallback)');
         } else {
-            $this->line('   <fg=yellow>⚠</> PHP ZIP extension is not loaded');
+            $this->warnLine('PHP ZIP extension is not loaded');
+            $status = $this->worst($status, self::STATUS_WARN);
         }
 
         if (! $cliAvailable && ! $phpAvailable) {
-            $this->hasErrors = true;
-            $this->line('   <fg=red>✗</> No ZIP strategy available - storage backups will fail');
+            $this->failLine('No ZIP strategy available - storage backups will fail');
+            $status = self::STATUS_FAIL;
         } else {
             $active = $cliAvailable ? 'cli (7z)' : 'php (ZipArchive)';
 
@@ -235,10 +224,10 @@ final class NotifierCheckCommand extends Command
                 $active = $strategy;
             }
 
-            $this->line("   <fg=gray>Active strategy:</> <fg=cyan>{$active}</> <fg=gray>(config: {$strategy})</>");
+            $this->detail('Active strategy', "<fg=cyan>{$active}</> <fg=gray>(config: {$strategy})</>");
         }
 
-        $this->newLine();
+        $this->record('ZIP archive tools', $status);
     }
 
     /**
@@ -246,50 +235,56 @@ final class NotifierCheckCommand extends Command
      */
     private function checkLoggingChannel(NotifierLoggerService $notifierLogger): void
     {
-        $this->line('<fg=yellow;options=bold>🔍 Checking logging channel...</>');
+        $this->section('logging channel');
 
         $preferredChannel = $notifierLogger->getPreferredChannel();
 
         if ($notifierLogger->isUsingPreferredChannel()) {
-            $this->line("   <fg=green>✓</> Logging channel '<fg=cyan>{$preferredChannel}</>' is configured");
-        } else {
-            $this->line("   <fg=yellow>⚠</> Logging channel '<fg=cyan>{$preferredChannel}</>' not found, using '<fg=cyan>daily</>' fallback");
-            $this->line('   <fg=gray>→ Add the channel to config/logging.php for dedicated backup logs</>');
+            $this->passLine("Logging channel '<fg=cyan>{$preferredChannel}</>' is configured");
+            $this->record('Logging channel', self::STATUS_PASS);
+
+            return;
         }
-        $this->newLine();
+
+        $this->warnLine("Logging channel '<fg=cyan>{$preferredChannel}</>' not found, using '<fg=cyan>daily</>' fallback");
+        $this->hint('Add the channel to config/logging.php for dedicated backup logs');
+        $this->record('Logging channel', self::STATUS_WARN);
     }
 
     private function checkQueueConfiguration(): void
     {
-        $this->line('<fg=yellow;options=bold>🔍 Checking queue configuration...</>');
+        $this->section('queue configuration');
 
         $connection = config('notifier.queue_connection', 'sync');
 
         if ($connection === 'sync') {
-            $this->line('   <fg=gray>ℹ</> Queue connection is "sync" - backups run synchronously in the HTTP request');
-            $this->line('   <fg=gray>→ Set NOTIFIER_QUEUE_CONNECTION to database, redis, or another async driver to offload backups</>');
-        } else {
-            $this->line("   <fg=green>✓</> Backups dispatched to queue: <fg=cyan>{$connection}</>");
+            $this->infoLine('Queue connection is "sync" - backups run synchronously in the HTTP request');
+            $this->hint('Set NOTIFIER_QUEUE_CONNECTION to database, redis, or another async driver to offload backups');
+            $this->record('Queue configuration', self::STATUS_WARN);
+
+            return;
         }
 
-        $this->newLine();
+        $this->passLine("Backups dispatched to queue: <fg=cyan>{$connection}</>");
+        $this->record('Queue configuration', self::STATUS_PASS);
     }
 
     private function checkBackupUrlReachability(): void
     {
-        $this->line('<fg=yellow;options=bold>🔍 Checking backup URL reachability...</>');
+        $this->section('backup URL reachability');
 
         $backupUrl = config('notifier.backup_url');
 
         if (empty($backupUrl)) {
-            $this->line('   <fg=yellow>⚠</> Backup URL is not configured, skipping connectivity check');
+            $this->warnLine('Backup URL is not configured, skipping connectivity check');
+            $this->record('Backup URL reachability', self::STATUS_WARN);
 
             return;
         }
 
         if (! str_starts_with($backupUrl, 'https://')) {
-            $this->hasErrors = true;
-            $this->line('   <fg=red>✗</> Backup URL must use HTTPS: <fg=cyan>'.$backupUrl.'</>');
+            $this->failLine("Backup URL must use HTTPS: <fg=cyan>{$backupUrl}</>");
+            $this->record('Backup URL reachability', self::STATUS_FAIL);
 
             return;
         }
@@ -309,16 +304,17 @@ final class NotifierCheckCommand extends Command
             $statusCode = $response->status();
 
             if ($statusCode < 500) {
-                $this->line("   <fg=green>✓</> Backup server is reachable: <fg=cyan>{$baseUrl}</>");
-                $this->line("   <fg=gray>Response status: {$statusCode}</>");
+                $this->passLine("The Notifier server is reachable: <fg=cyan>{$baseUrl}</>");
+                $this->detail('Response status', (string) $statusCode);
+                $this->record('Backup URL reachability', self::STATUS_PASS);
             } else {
-                $this->hasErrors = true;
-                $this->line("   <fg=red>✗</> Backup server returned error: {$statusCode}");
+                $this->failLine("The Notifier server returned an error: {$statusCode}");
+                $this->record('Backup URL reachability', self::STATUS_FAIL);
             }
         } catch (Throwable $e) {
-            $this->hasErrors = true;
-            $this->line('   <fg=red>✗</> Cannot reach backup server');
-            $this->line("   <fg=gray>→ Error: {$e->getMessage()}</>");
+            $this->failLine('Cannot reach the Notifier server');
+            $this->hint("Error: {$e->getMessage()}");
+            $this->record('Backup URL reachability', self::STATUS_FAIL);
         }
     }
 }

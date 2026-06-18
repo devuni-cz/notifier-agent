@@ -42,7 +42,7 @@ describe('NotifierInstallCommand', function () {
                 ->expectsQuestion('NOTIFIER_URL', 'https://new-url.com')
                 ->expectsConfirmation('Generate a strong backup password automatically?', 'no')
                 ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'new-password-1234')
-                ->expectsOutputToContain('saved successfully')
+                ->expectsOutputToContain('Configuration saved')
                 ->assertExitCode(0);
 
             $envContent = file_get_contents($this->basePath.'/.env');
@@ -51,6 +51,35 @@ describe('NotifierInstallCommand', function () {
                 ->toContain('NOTIFIER_URL="https://new-url.com"')
                 ->toContain('NOTIFIER_BACKUP_PASSWORD="new-password-1234"')
                 ->not->toContain('existing-code');
+        });
+
+        it('generates and displays a one-time backup password when the user opts in', function () {
+            file_put_contents($this->basePath.'/.env', 'APP_NAME=Testing'.PHP_EOL);
+
+            $this->artisan('notifier:install', ['--force' => true])
+                ->expectsQuestion('NOTIFIER_BACKUP_CODE', 'my-code')
+                ->expectsQuestion('NOTIFIER_URL', 'https://new-url.com')
+                ->expectsConfirmation('Generate a strong backup password automatically?', 'yes')
+                ->expectsOutputToContain('Store this backup password securely')
+                ->assertExitCode(0);
+
+            $envContent = file_get_contents($this->basePath.'/.env');
+            // The generated value is 48 hex chars (bin2hex of 24 random bytes).
+            expect($envContent)->toMatch('/NOTIFIER_BACKUP_PASSWORD="[0-9a-f]{48}"/');
+        });
+
+        it('masks the secrets in the closing recap instead of echoing the plaintext', function () {
+            file_put_contents($this->basePath.'/.env', 'APP_NAME=Testing'.PHP_EOL);
+
+            $this->artisan('notifier:install', ['--force' => true])
+                ->expectsQuestion('NOTIFIER_BACKUP_CODE', 'super-secret-code')
+                ->expectsQuestion('NOTIFIER_URL', 'https://new-url.com')
+                ->expectsConfirmation('Generate a strong backup password automatically?', 'no')
+                ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'new-password-1234')
+                ->expectsOutputToContain('Configuration saved')
+                ->doesntExpectOutputToContain('super-secret-code')
+                ->doesntExpectOutputToContain('new-password-1234')
+                ->assertExitCode(0);
         });
 
         it('creates the .env file from .env.example when it is missing', function () {

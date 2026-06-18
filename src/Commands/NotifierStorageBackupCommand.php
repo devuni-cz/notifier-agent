@@ -9,17 +9,20 @@ use Devuni\Notifier\Services\NotifierConfigService;
 use Devuni\Notifier\Services\NotifierStorageService;
 use Devuni\Notifier\Traits\ChecksNotifierEnvironmentTrait;
 use Devuni\Notifier\Traits\DisplayHelperTrait;
+use Devuni\Notifier\Traits\RendersReportTrait;
+use Devuni\Notifier\Traits\RunsBackupTrait;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Cache;
 
 final class NotifierStorageBackupCommand extends Command
 {
     use ChecksNotifierEnvironmentTrait;
     use DisplayHelperTrait;
+    use RendersReportTrait;
+    use RunsBackupTrait;
 
     protected $signature = 'notifier:storage-backup';
 
-    protected $description = 'Command for creating a storage backup';
+    protected $description = 'Archive the public storage and upload an encrypted backup to the Notifier server';
 
     public function handle(NotifierConfigService $configService, NotifierStorageService $storageService): int
     {
@@ -29,20 +32,13 @@ final class NotifierStorageBackupCommand extends Command
             return self::FAILURE;
         }
 
-        $this->line('⚙️  STARTING NEW BACKUP ⚙️');
-        $this->newLine();
-
-        $backup_path = $storageService->createStorageBackup();
-        $this->line('✅ Backup file created successfully at: '.$backup_path);
-        $storageService->sendStorageBackup($backup_path);
-
-        // Record the success so the heartbeat manifest can report this site's
-        // last storage backup time to the control plane.
-        Cache::forever(HeartbeatService::LAST_STORAGE_BACKUP_KEY, now()->toIso8601String());
-
-        $this->newLine();
-        $this->line('✅ End of backup');
-
-        return self::SUCCESS;
+        return $this->runBackup(
+            'Storage backup',
+            fn (): string => $storageService->createStorageBackup(),
+            function (string $path) use ($storageService): void {
+                $storageService->sendStorageBackup($path);
+            },
+            HeartbeatService::LAST_STORAGE_BACKUP_KEY,
+        );
     }
 }

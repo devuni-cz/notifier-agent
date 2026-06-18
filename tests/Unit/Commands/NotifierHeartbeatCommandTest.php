@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use Devuni\Notifier\Commands\NotifierHeartbeatCommand;
+use Devuni\Notifier\Services\HeartbeatService;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 
@@ -48,6 +51,44 @@ describe('NotifierHeartbeatCommand', function () {
         $command = new NotifierHeartbeatCommand;
 
         expect($command->getName())->toBe('notifier:heartbeat')
-            ->and($command->getDescription())->toBe('Send agent heartbeat + identity manifest to the control plane');
+            ->and($command->getDescription())->toBe('Report agent status and identity to the Notifier server');
+    });
+
+    describe('manifest recap', function () {
+        it('shows the reported identity fields on success', function () {
+            Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+            Artisan::call('notifier:heartbeat');
+            $output = Artisan::output();
+
+            expect($output)
+                ->toContain('Agent version:')
+                ->toContain('Queue:')
+                ->toContain('Enabled features:')
+                ->toContain('Last database backup:');
+        });
+
+        it('shows "never" for a backup that has not run yet', function () {
+            Cache::forget(HeartbeatService::LAST_DATABASE_BACKUP_KEY);
+            Cache::forget(HeartbeatService::LAST_STORAGE_BACKUP_KEY);
+            Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+            Artisan::call('notifier:heartbeat');
+            $output = Artisan::output();
+
+            expect($output)
+                ->toContain('Last database backup: never')
+                ->toContain('Last storage backup: never');
+        });
+
+        it('shows the stored last-backup timestamp in the recap', function () {
+            Cache::forever(HeartbeatService::LAST_DATABASE_BACKUP_KEY, '2026-06-18T07:00:00+00:00');
+            Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+            Artisan::call('notifier:heartbeat');
+            $output = Artisan::output();
+
+            expect($output)->toContain('Last database backup: 2026-06-18T07:00:00+00:00');
+        });
     });
 });

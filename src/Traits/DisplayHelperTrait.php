@@ -30,6 +30,13 @@ trait DisplayHelperTrait
 
     protected function displayGradientLogo(): void
     {
+        // Pure decoration - skip it on non-interactive output (scheduler, cron,
+        // redirected logs) so we never dump ASCII art into a log file. The
+        // tagline below still carries the identity in plain text.
+        if (! $this->output->isDecorated()) {
+            return;
+        }
+
         $lines = [
             '  ███╗   ██╗ ██████╗ ████████╗██╗███████╗██╗███████╗██████╗ ',
             '  ████╗  ██║██╔═══██╗╚══██╔══╝██║██╔════╝██║██╔════╝██╔══██╗',
@@ -63,34 +70,24 @@ trait DisplayHelperTrait
         note(" devuni/notifier-agent {$this->displayBadge(" {$version} ")}");
     }
 
-    protected function displayOutro(string $text, string $link = '', int $terminalWidth = 80): void
-    {
-        $visibleText = preg_replace('/\x1b\[[0-9;]*m|\x1b\]8;;[^\x07]*\x07|\x1b\]8;;\x1b\\\\/', '', $text.$link) ?? '';
-        $visualWidth = mb_strwidth($visibleText);
-        $paddingLength = (int) (floor(($terminalWidth - $visualWidth) / 2)) - 2;
-        $padding = str_repeat(' ', max(0, $paddingLength));
-
-        $this->output->writeln(
-            "\e[48;5;{$this->theme->primary()}m\033[2K{$padding}\e[30m\e[1m{$text}{$link}\e[0m"
-        );
-        $this->newLine();
-    }
-
     protected function ansi256Fg(int $color, string $text): string
     {
+        if (! $this->output->isDecorated()) {
+            return $text;
+        }
+
         return "\e[38;5;{$color}m{$text}\e[0m";
     }
 
     protected function displayBadge(string $text): string
     {
+        if (! $this->output->isDecorated()) {
+            return $text;
+        }
+
         $primary = $this->theme?->primary() ?? 39;
 
         return "\e[48;5;{$primary}m\e[30m\e[1m{$text}\e[0m";
-    }
-
-    protected function hyperlink(string $label, string $url): string
-    {
-        return "\033]8;;{$url}\007{$label}\033]8;;\033\\";
     }
 
     private function getCurrentVersion(): string

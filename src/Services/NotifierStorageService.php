@@ -69,6 +69,23 @@ final class NotifierStorageService
             throw $e;
         }
 
+        // A non-empty source that still produces a tiny archive means the write
+        // was truncated or corrupt. Treat it like an empty source (return '')
+        // so the caller's "nothing to back up" skip handles it - never report a
+        // successful backup or stamp the heartbeat for an archive we won't send.
+        $size = filesize($path);
+
+        if ($size === false || $size < 100) {
+            $logger->warning('⚠️ backup archive is empty or too small, skipping upload', [
+                'file_size' => $size,
+                'path' => $path,
+            ]);
+
+            File::delete($path);
+
+            return '';
+        }
+
         $logger->info("✅ backup archive created ({$fileCount} files): {$path}");
 
         return $path;
