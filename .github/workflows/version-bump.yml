@@ -20,10 +20,10 @@ jobs:
   bump:
     name: Bump to next ${{ github.event.inputs.version_type }}
     runs-on: ubuntu-latest
-    # The bump pushes a tag to main, which triggers Release (and Packagist sync).
-    # Gate it behind the `release` environment so a reviewer approves before the
-    # tag is created (no-op until required reviewers are configured repo-side).
-    environment: release
+    # The bump only creates the version commit + tag; it runs without an approval
+    # gate so cutting a release isn't blocked here. The actual publish (Release
+    # workflow) stays behind the `release` environment, so a reviewer still
+    # approves before anything is published to GitHub Releases / Packagist.
     permissions:
       contents: write
 
