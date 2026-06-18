@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-06-18
+
+### Fixed
+
+-   **A failed or empty storage backup can no longer report success.** After building the archive the agent now checks its size; a `< 100 B` (or unreadable) file is treated as "nothing to back up" — it logs a warning, removes the stub file and skips the upload instead of silently reporting a successful run. The heartbeat success timestamp is likewise stamped **only after a real upload completes**, so a creation failure or an empty source can no longer leave a green heartbeat behind a backup that never actually shipped.
+
+### Changed
+
+-   **Backup commands fail cleanly.** Archive-creation errors now exit `1` with a readable message via the shared backup flow instead of surfacing an uncaught stack trace.
+-   **CLI output overhauled.** `notifier:check`, the backup commands, `notifier:heartbeat` and `notifier:install` now share one pass/warn/fail report vocabulary with a tri-state `RESULT` summary; `notifier:install` masks the backup code/password in its recap (presence and length only, never plaintext); a non-writable storage path prints an actionable chown/chmod hint; and logo/badge/ANSI decoration is suppressed when the output is not a TTY, so cron and redirected logs stay clean.
+
 ## [1.6.1] - 2026-06-17
 
 ### Security
