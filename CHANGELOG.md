@@ -147,7 +147,11 @@ The first official release of **`devuni/notifier-agent`** - the client agent of 
 -   The PHP namespace is **`Devuni\Notifier\`** and the env surface uses the established `NOTIFIER_*` keys.
 -   Built on the codebase previously published as `devuni/notifier-package` (2.x). That package is superseded by this one: its `v2.8.0` is the terminal release and all further development happens here. Migration is a one-step `composer remove devuni/notifier-package && composer require devuni/notifier-agent`.
 
-[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.6.2...HEAD
+[1.6.2]: https://github.com/devuni-cz/notifier-agent/compare/v1.6.1...v1.6.2
+[1.6.1]: https://github.com/devuni-cz/notifier-agent/compare/v1.6.0...v1.6.1
+[1.6.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.5.0...v1.6.0
+[1.5.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/devuni-cz/notifier-agent/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.2.0...v1.3.0

@@ -2,8 +2,8 @@
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/devuni/notifier-agent.svg?style=flat-square)](https://packagist.org/packages/devuni/notifier-agent)
 [![Tests](https://github.com/devuni-cz/notifier-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/devuni-cz/notifier-agent/actions/workflows/ci.yml)
-[![PHP 8.4](https://img.shields.io/badge/PHP-8.4-777BB4?style=flat-square&logo=php&logoColor=white)](https://www.php.net)
-[![Laravel 12](https://img.shields.io/badge/Laravel-12-FF2D20?style=flat-square&logo=laravel&logoColor=white)](https://laravel.com)
+[![PHP 8.4 | 8.5](https://img.shields.io/badge/PHP-8.4%20%7C%208.5-777BB4?style=flat-square&logo=php&logoColor=white)](https://www.php.net)
+[![Laravel 12 | 13](https://img.shields.io/badge/Laravel-12%20%7C%2013-FF2D20?style=flat-square&logo=laravel&logoColor=white)](https://laravel.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE.md)
 
 Encrypted database & storage backups for Laravel apps, shipped to the [Devuni Notifier](https://notifier.devuni.cz) central server. AES-256 ZIPs, chunked HTTPS upload, token auth, queue support. Supports **MySQL**, **MariaDB**, **PostgreSQL**, and **YugabyteDB** (via YSQL).
