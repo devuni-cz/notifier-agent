@@ -40,7 +40,7 @@ final class AnnouncementsService
      */
     public function activeAnnouncements(): array
     {
-        if (! config('notifier.features.announcements', false)) {
+        if (! config('notifier.features.announcements', true)) {
             return [];
         }
 
@@ -234,7 +234,7 @@ final class AnnouncementsService
             'reason' => $reason,
         ]);
 
-        Cache::put($cacheKey, [], (int) config('notifier.announcements.failure_cache_ttl', 60));
+        Cache::put($cacheKey, [], (int) config('notifier.announcements.failure_cache_ttl', 300));
 
         return [];
     }

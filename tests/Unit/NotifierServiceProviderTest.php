@@ -20,21 +20,15 @@ describe('NotifierServiceProvider', function () {
             expect($providers[NotifierServiceProvider::class])->toBeTrue();
         });
 
-        it('is registered as a deferred provider', function () {
+        it('is not a deferred provider', function () {
+            // It registers its commands immediately, so it must not defer.
             $provider = new NotifierServiceProvider($this->app);
 
-            // Test that provider is not deferred (it registers commands immediately)
             expect($provider->isDeferred())->toBeFalse();
         });
     });
 
     describe('Configuration Registration', function () {
-        it('merges package configuration', function () {
-            // Test that package configuration is available
-            expect(config('notifier'))->not->toBeNull();
-            expect(config('notifier'))->toBeArray();
-        });
-
         it('loads configuration from package config file', function () {
             // Test that configuration keys exist
             $configKeys = ['backup_code', 'backup_url', 'backup_zip_password', 'excluded_files'];
@@ -194,11 +188,6 @@ describe('NotifierServiceProvider', function () {
     });
 
     describe('Register Method', function () {
-        it('merges configuration with correct namespace', function () {
-            // Test configuration merging
-            expect(config('notifier'))->not->toBeEmpty();
-        });
-
         it('commands are available after registration', function () {
             // Test that all commands are registered in the register method
             $commands = Artisan::all();

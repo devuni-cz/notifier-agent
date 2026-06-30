@@ -216,12 +216,17 @@ return [
     | Feature Toggles
     |--------------------------------------------------------------------------
     |
-    | Switches for agent features beyond backups. Announcements are ON by default
-    | but cost nothing until NOTIFIER_URL is configured - the service no-ops and
-    | makes no HTTP call without a target, so a backup-only install is unaffected.
+    | Switches for the agent's features. Announcements are ON by default but cost
+    | nothing until NOTIFIER_URL is configured - the service no-ops and makes no
+    | HTTP call without a target, so a backup-only install is unaffected.
     |
     */
     'features' => [
+        // Whether this site runs the scheduled backups. Advertised in the
+        // heartbeat manifest so the control plane knows which sites back up;
+        // set NOTIFIER_BACKUPS_ENABLED=false on sites that intentionally don't.
+        'backups' => env('NOTIFIER_BACKUPS_ENABLED', true),
+
         // Pull this site's maintenance/announcement notices from the central
         // server and expose them for rendering in your own dashboard.
         'announcements' => env('NOTIFIER_ANNOUNCEMENTS_ENABLED', true),
