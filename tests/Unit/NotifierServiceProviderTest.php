@@ -87,17 +87,19 @@ describe('NotifierServiceProvider', function () {
             expect($commands['notifier:heartbeat'])->toBeInstanceOf(NotifierHeartbeatCommand::class);
         });
 
-        it('registers all five notifier commands', function () {
+        it('registers every notifier command', function () {
             $commands = Artisan::all();
             $notifierCommands = array_filter(array_keys($commands), function ($command) {
                 return str_starts_with($command, 'notifier:');
             });
 
-            expect($notifierCommands)->toHaveCount(5);
+            expect($notifierCommands)->toHaveCount(7);
             expect($notifierCommands)->toContain('notifier:check');
             expect($notifierCommands)->toContain('notifier:install');
             expect($notifierCommands)->toContain('notifier:database-backup');
             expect($notifierCommands)->toContain('notifier:storage-backup');
+            expect($notifierCommands)->toContain('notifier:database-restore');
+            expect($notifierCommands)->toContain('notifier:storage-restore');
             expect($notifierCommands)->toContain('notifier:heartbeat');
         });
     });

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+-   **`features.backups` is now a real toggle.** The heartbeat manifest has always advertised a `backups` flag, but the key it reads was never defined in `config/notifier.php`, so it was hard-wired to `true` and could not be turned off. The key now exists and is driven by `NOTIFIER_BACKUPS_ENABLED`, letting a site that intentionally does not back up say so to the control plane instead of appearing to be a silent failure.
+
+### Changed
+
+-   **Announcement config fallbacks now match the shipped defaults.** `AnnouncementsService` fell back to `false` for `features.announcements` and `60` for `announcements.failure_cache_ttl`, while `config/notifier.php` ships `true` and `300`. The in-code fallbacks were aligned with the config. These fallbacks only apply when the key is absent entirely — a site whose **published** config predates these keys will now default announcements to **on** (still a no-op until `NOTIFIER_URL` is set) and cache a failed fetch for 5 minutes instead of 1.
+
+### Removed
+
+-   **Dead code in `BackupTypeEnum`.** `values()` and `validationRule()` had no callers — request validation goes through `Rule::enum` — and were removed.
+
+### Internal
+
+-   CI matrix now also covers PHP 8.5 + Laravel 12, the one supported combination that was untested.
+-   CHANGELOG compare links, README badge and `VERSION_MANAGEMENT.md` corrected; `TODO.md` refreshed against the actual state of the code.
+
 ## [1.6.2] - 2026-06-18
 
 ### Fixed

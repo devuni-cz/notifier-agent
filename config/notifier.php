@@ -25,6 +25,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Restore Token
+    |--------------------------------------------------------------------------
+    |
+    | Authenticates DOWNLOADS of this site's own backups from the control plane.
+    | Deliberately a different credential from the backup code: leaking the code
+    | that uploads backups must not also grant the ability to pull them back
+    | down. Leave empty to make restore impossible for this install.
+    |
+    */
+    'restore_token' => env('NOTIFIER_RESTORE_TOKEN'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Central Notifier URL
     |--------------------------------------------------------------------------
     |
