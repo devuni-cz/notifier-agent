@@ -6,12 +6,15 @@ namespace Devuni\Notifier\Services\Zip;
 
 use Devuni\Notifier\Interfaces\ZipExtractorInterface;
 use Devuni\Notifier\Services\NotifierLoggerService;
+use Devuni\Notifier\Services\Zip\Concerns\GuardsExtractionSize;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 use ZipArchive;
 
 final class PhpZipExtractor implements ZipExtractorInterface
 {
+    use GuardsExtractionSize;
+
     public function __construct(
         private readonly NotifierLoggerService $notifierLogger,
     ) {}
@@ -44,12 +47,38 @@ final class PhpZipExtractor implements ZipExtractorInterface
             throw new RuntimeException('Unable to set archive password.');
         }
 
+        // When a backup password is configured, EVERY entry must be encrypted.
+        // ZipArchive reads an unencrypted entry regardless of setPassword(), so a
+        // hostile control plane could otherwise substitute a plaintext archive and
+        // bypass the password entirely - the encryption IS the archive's
+        // authenticity check, so refuse anything that is not encrypted.
+        if ($password !== '') {
+            $this->assertEveryEntryEncrypted($zip);
+        }
+
         File::ensureDirectoryExists($destination);
 
         $root = $this->realDirectory($destination);
         $written = 0;
 
         try {
+            // Bound the extraction before writing anything: sum the declared
+            // uncompressed sizes and refuse a decompression bomb / disk-fill.
+            // (Inside the try so the finally still closes $zip if the guard throws.)
+            $totalUncompressed = 0;
+            $totalCompressed = 0;
+
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $stat = $zip->statIndex($i);
+
+                if (is_array($stat)) {
+                    $totalUncompressed += (int) ($stat['size'] ?? 0);
+                    $totalCompressed += (int) ($stat['comp_size'] ?? 0);
+                }
+            }
+
+            $this->guardExtractedSize($totalUncompressed, $destination, $totalCompressed);
+
             for ($i = 0; $i < $zip->numFiles; $i++) {
                 $name = $zip->getNameIndex($i);
 
@@ -90,6 +119,34 @@ final class PhpZipExtractor implements ZipExtractorInterface
         }
 
         return $written;
+    }
+
+    /**
+     * Refuse the archive unless every file entry is encrypted. Reads statIndex()
+     * for each entry and rejects any with EM_NONE, so a plaintext (attacker-made)
+     * archive cannot slip past the configured password.
+     */
+    private function assertEveryEntryEncrypted(ZipArchive $zip): void
+    {
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+
+            if ($name === false || str_ends_with($name, '/')) {
+                continue;
+            }
+
+            $stat = $zip->statIndex($i);
+            $method = is_array($stat) ? ($stat['encryption_method'] ?? ZipArchive::EM_NONE) : ZipArchive::EM_NONE;
+
+            if ($method === ZipArchive::EM_NONE) {
+                $zip->close();
+
+                throw new RuntimeException(
+                    'Refusing to restore: archive entry "'.$name.'" is not encrypted, but a backup password '
+                    .'is configured. The archive is corrupt or has been substituted.'
+                );
+            }
+        }
     }
 
     /**

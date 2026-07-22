@@ -35,6 +35,11 @@ final class MysqlImporter implements DatabaseImporterInterface
             throw new RuntimeException('SQL dump not found at: '.$sqlPath);
         }
 
+        // Refuse a dump carrying mysql client directives (\!, system, source)
+        // before piping it in - a tampered archive could otherwise run a shell
+        // command as the app user.
+        SqlDirectiveGuard::assertMysqlSafe($sqlPath);
+
         $config = config("database.connections.{$this->connection}");
 
         if (! is_array($config)) {
@@ -87,9 +92,17 @@ final class MysqlImporter implements DatabaseImporterInterface
     {
         return [
             'mysql',
-            // Without --force the client aborts on the first SQL error, which is
-            // what a restore wants - a half-applied dump is worse than none.
+            // Without --force the client aborts on the first SQL error. Note this
+            // does NOT make the restore atomic: a mysqldump interleaves DDL
+            // (DROP/CREATE TABLE) with INSERTs, and every DDL statement implicitly
+            // commits, so a failure mid-dump leaves the database half-applied. Full
+            // atomicity is impossible in the mysql client; the command takes a
+            // pre-restore snapshot and rolls back to it on failure instead. Do NOT
+            // add --force here - it would half-apply and defeat the fail-fast.
             '--batch',
+            // Block `LOAD DATA LOCAL INFILE` in the dump from reading arbitrary
+            // local files through the client.
+            '--skip-local-infile',
             '--user='.($config['username'] ?? ''),
             '--port='.($config['port'] ?? 3306),
             '--host='.($config['host'] ?? '127.0.0.1'),

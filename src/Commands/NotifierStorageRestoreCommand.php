@@ -47,7 +47,9 @@ final class NotifierStorageRestoreCommand extends Command
         $this->infoLine('#'.$backup['id'].'  '.$backup['name'].'  ('.$this->humanBytes($backup['size']).', '.($backup['created_at'] ?? 'unknown date').')');
         $this->infoLine('Target: '.$storagePath);
 
-        if (! $this->confirmRestore($storagePath)) {
+        // A dry run never writes to storage, so it must not be blocked by the
+        // production gate (which guards the destructive path) nor prompt.
+        if (! $this->option('dry-run') && ! $this->confirmRestore($storagePath)) {
             return self::FAILURE;
         }
 
@@ -56,7 +58,7 @@ final class NotifierStorageRestoreCommand extends Command
 
         try {
             $this->section('Download');
-            $restore->download($backup['id'], $archivePath);
+            $restore->download($backup['id'], $archivePath, $backup['checksum'] ?? null);
             $this->passLine('Archive downloaded');
 
             $this->section('Extract');

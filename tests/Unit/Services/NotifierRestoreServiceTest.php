@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Devuni\Notifier\Enums\BackupTypeEnum;
+use Devuni\Notifier\Interfaces\DatabaseImporterInterface;
 use Devuni\Notifier\Services\NotifierRestoreService;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -124,6 +125,78 @@ it('rejects a truncated download rather than failing later inside the unzip', fu
     expect(File::exists($destination))->toBeFalse();
 });
 
+it('exposes a well-formed backup checksum and nulls a malformed one', function () {
+    $validHash = str_repeat('a', 64);
+
+    Http::fake([
+        '*' => Http::response(['data' => [
+            ['id' => 1, 'type' => 'backup_database', 'name' => 'good.zip', 'size' => 10, 'checksum' => $validHash, 'created_at' => null],
+            ['id' => 2, 'type' => 'backup_database', 'name' => 'bad.zip', 'size' => 10, 'checksum' => 'not-a-real-hash', 'created_at' => null],
+        ]], 200),
+    ]);
+
+    $backups = app(NotifierRestoreService::class)->available(BackupTypeEnum::Database);
+
+    expect($backups[0]['checksum'])->toBe($validHash)
+        ->and($backups[1]['checksum'])->toBeNull();
+});
+
+it('accepts a download whose bytes match the server checksum', function () {
+    $body = str_repeat('ARCHIVE-BYTES-', 20); // > 100 bytes
+    $checksum = hash('sha256', $body);
+
+    Http::fake(['*' => Http::response($body, 200)]);
+
+    $destination = $this->work.'/archive.zip';
+
+    app(NotifierRestoreService::class)->download(5, $destination, $checksum);
+
+    expect(File::get($destination))->toBe($body);
+});
+
+it('rejects and deletes a download whose bytes do NOT match the server checksum', function () {
+    $body = str_repeat('TAMPERED-BYTES-', 20);
+    $wrongChecksum = hash('sha256', 'something-else-entirely');
+
+    Http::fake(['*' => Http::response($body, 200)]);
+
+    $destination = $this->work.'/archive.zip';
+
+    expect(fn () => app(NotifierRestoreService::class)->download(5, $destination, $wrongChecksum))
+        ->toThrow(RuntimeException::class, 'does not match the checksum');
+
+    expect(File::exists($destination))->toBeFalse();
+});
+
+it('verifies against the X-Backup-Checksum header when the listing gave no checksum', function () {
+    $body = str_repeat('HEADER-VERIFIED-', 20);
+    $checksum = hash('sha256', $body);
+
+    // No checksum passed in, but the download response carries one.
+    Http::fake(['*' => Http::response($body, 200, ['X-Backup-Checksum' => $checksum])]);
+
+    $destination = $this->work.'/archive.zip';
+
+    app(NotifierRestoreService::class)->download(5, $destination, null);
+
+    expect(File::get($destination))->toBe($body);
+});
+
+it('rejects a download when the listing checksum and the header checksum disagree', function () {
+    $body = str_repeat('CONFLICTING-BYTES-', 20);
+    $listingChecksum = hash('sha256', $body);
+    $headerChecksum = hash('sha256', 'a different thing');
+
+    Http::fake(['*' => Http::response($body, 200, ['X-Backup-Checksum' => $headerChecksum])]);
+
+    $destination = $this->work.'/archive.zip';
+
+    expect(fn () => app(NotifierRestoreService::class)->download(5, $destination, $listingChecksum))
+        ->toThrow(RuntimeException::class, 'two disagreeing checksums');
+
+    expect(File::exists($destination))->toBeFalse();
+});
+
 it('restores storage additively - it overwrites matching files but deletes nothing', function () {
     $extracted = $this->work.'/extracted';
     $target = $this->work.'/storage';
@@ -141,4 +214,102 @@ it('restores storage additively - it overwrites matching files but deletes nothi
         ->and(File::get($target.'/shared.txt'))->toBe('from-backup')
         ->and(File::get($target.'/nested/new.txt'))->toBe('new')
         ->and(File::get($target.'/untouched.txt'))->toBe('keep me');
+});
+
+it('refuses a storage restore that would drop a .php webshell, writing nothing', function () {
+    $extracted = $this->work.'/extracted';
+    $target = $this->work.'/storage';
+    File::ensureDirectoryExists($extracted.'/uploads');
+    File::ensureDirectoryExists($target);
+
+    // A legitimate-looking file alongside a webshell the server tried to smuggle in.
+    File::put($extracted.'/uploads/photo.jpg', 'jpeg-bytes');
+    File::put($extracted.'/uploads/shell.php', '<?php system($_GET["c"]); ?>');
+
+    expect(fn () => app(NotifierRestoreService::class)->restoreStorage($extracted, $target))
+        ->toThrow(RuntimeException::class, 'executable/interpretable file');
+
+    // The guard validates the whole tree BEFORE writing anything, so even the
+    // innocent file must not have landed - the restore is all-or-nothing.
+    expect(File::exists($target.'/uploads/photo.jpg'))->toBeFalse()
+        ->and(File::exists($target.'/uploads/shell.php'))->toBeFalse();
+});
+
+it('refuses a storage restore containing an .htaccess override file', function () {
+    $extracted = $this->work.'/extracted';
+    $target = $this->work.'/storage';
+    File::ensureDirectoryExists($extracted);
+    File::ensureDirectoryExists($target);
+
+    File::put($extracted.'/.htaccess', "AddType application/x-httpd-php .jpg\n");
+
+    expect(fn () => app(NotifierRestoreService::class)->restoreStorage($extracted, $target))
+        ->toThrow(RuntimeException::class, 'server-override file');
+});
+
+it('stages a bare .sql download for import when no backup password is set', function () {
+    config()->set('notifier.backup_zip_password', '');
+
+    // A password-less DB backup is a bare .sql, not a ZIP. extract() must stage it.
+    $archive = $this->work.'/archive.zip';
+    File::put($archive, "-- dump\nCREATE TABLE t (id int);\nINSERT INTO t VALUES (1);\n");
+
+    $extractedDir = app(NotifierRestoreService::class)->extract($archive, $this->work.'/extracted');
+
+    $dumps = glob($extractedDir.'/*.sql');
+    expect($dumps)->toHaveCount(1)
+        ->and(File::get($dumps[0]))->toContain('CREATE TABLE t');
+});
+
+it('refuses a non-ZIP download when a backup password is configured', function () {
+    config()->set('notifier.backup_zip_password', 'secret');
+
+    $archive = $this->work.'/archive.zip';
+    File::put($archive, "-- not a zip, just plaintext\nCREATE TABLE t;\n");
+
+    expect(fn () => app(NotifierRestoreService::class)->extract($archive, $this->work.'/extracted'))
+        ->toThrow(RuntimeException::class, 'not a ZIP archive');
+});
+
+it('passes a genuine ZIP through to the extractor', function () {
+    config()->set('notifier.backup_zip_password', '');
+
+    $archive = $this->work.'/archive.zip';
+    $zip = new ZipArchive;
+    $zip->open($archive, ZipArchive::CREATE);
+    $zip->addFromString('dump.sql', 'CREATE TABLE t (id int);');
+    $zip->close();
+
+    $extractedDir = app(NotifierRestoreService::class)->extract($archive, $this->work.'/extracted');
+
+    expect(File::get($extractedDir.'/dump.sql'))->toBe('CREATE TABLE t (id int);');
+});
+
+it('delegates a snapshot rollback to the database importer', function () {
+    $recorder = new class implements DatabaseImporterInterface
+    {
+        /** @var array<int, string> */
+        public array $seen = [];
+
+        public static function isAvailable(): bool
+        {
+            return true;
+        }
+
+        public function import(string $sqlPath): void
+        {
+            $this->seen[] = $sqlPath;
+        }
+
+        public function describe(): string
+        {
+            return 'fake-importer';
+        }
+    };
+
+    app()->instance(DatabaseImporterInterface::class, $recorder);
+
+    app(NotifierRestoreService::class)->restoreDatabaseFromFile('/snapshots/pre-restore.sql');
+
+    expect($recorder->seen)->toBe(['/snapshots/pre-restore.sql']);
 });

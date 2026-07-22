@@ -92,6 +92,26 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | PostgreSQL Restore Binary
+    |--------------------------------------------------------------------------
+    |
+    | Which CLI client to use when RESTORING a PostgreSQL/YugabyteDB dump. The
+    | restore-side mirror of `postgres_dump_binary`.
+    |
+    | Options:
+    | - null (default) : Auto-detect - prefers `ysqlsh` (YugabyteDB), falls back
+    |                    to `psql` (standard PostgreSQL).
+    | - 'psql'         : Force standard PostgreSQL client.
+    | - 'ysqlsh'       : Force YugabyteDB's ysqlsh (a psql fork; accepts every
+    |                    flag the importer emits).
+    |
+    | Only applies when the active connection driver is `pgsql`.
+    |
+    */
+    'postgres_restore_binary' => env('NOTIFIER_POSTGRES_RESTORE_BINARY'),
+
+    /*
+    |--------------------------------------------------------------------------
     | PostgreSQL Schema
     |--------------------------------------------------------------------------
     |
@@ -187,6 +207,29 @@ return [
     |
     */
     'zip_strategy' => env('NOTIFIER_ZIP_STRATEGY', 'auto'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Restore Extraction Limits
+    |--------------------------------------------------------------------------
+    |
+    | Guards against a decompression bomb / accidental disk-fill when extracting
+    | a backup downloaded from the control plane. The archive is untrusted, so
+    | its declared uncompressed size is checked BEFORE any byte is written.
+    |
+    | - restore_max_extracted_bytes : hard ceiling on the total uncompressed
+    |   size of an archive. 0 disables the absolute cap. Default 10 GiB.
+    | - restore_disk_free_margin_bytes : free space kept back on the destination
+    |   volume; extraction is refused if it would consume more than
+    |   (free space - margin). Default 256 MiB.
+    | - restore_max_compression_ratio : reject an archive whose aggregate
+    |   uncompressed/compressed ratio exceeds this. 0 disables the ratio guard
+    |   (default), because legitimate SQL dumps compress very well.
+    |
+    */
+    'restore_max_extracted_bytes' => (int) env('NOTIFIER_RESTORE_MAX_EXTRACTED_BYTES', 10 * 1024 * 1024 * 1024),
+    'restore_disk_free_margin_bytes' => (int) env('NOTIFIER_RESTORE_DISK_FREE_MARGIN_BYTES', 256 * 1024 * 1024),
+    'restore_max_compression_ratio' => (int) env('NOTIFIER_RESTORE_MAX_COMPRESSION_RATIO', 0),
 
     /*
     |--------------------------------------------------------------------------

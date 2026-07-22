@@ -91,3 +91,60 @@ it('reports a missing archive rather than silently succeeding', function () {
     expect(fn () => app(PhpZipExtractor::class)->extract($this->work.'/nope.zip', $this->destination, 'pw'))
         ->toThrow(RuntimeException::class, 'Archive not found');
 });
+
+it('refuses a plaintext archive when a backup password is configured', function () {
+    // A hostile control plane could hand back an UNENCRYPTED zip; ZipArchive would
+    // happily read it and ignore setPassword(), silently bypassing the password.
+    // The encryption is the archive's authenticity check, so this must be refused.
+    $zip = new ZipArchive;
+    $zip->open($this->zipPath, ZipArchive::CREATE);
+    $zip->addFromString('dump.sql', 'SUBSTITUTED PLAINTEXT DUMP');
+    $zip->close();
+
+    expect(fn () => app(PhpZipExtractor::class)->extract($this->zipPath, $this->destination, 'the-password'))
+        ->toThrow(RuntimeException::class, 'not encrypted');
+
+    expect(File::exists($this->destination.'/dump.sql'))->toBeFalse();
+});
+
+it('refuses an archive that expands past the configured extraction cap', function () {
+    $zip = new ZipArchive;
+    $zip->open($this->zipPath, ZipArchive::CREATE);
+    $zip->addFromString('dump.sql', str_repeat('A', 5000));
+    $zip->close();
+
+    config()->set('notifier.restore_max_extracted_bytes', 1000);
+
+    expect(fn () => app(PhpZipExtractor::class)->extract($this->zipPath, $this->destination, ''))
+        ->toThrow(RuntimeException::class, 'limit');
+
+    expect(File::exists($this->destination.'/dump.sql'))->toBeFalse();
+});
+
+it('extracts normally when the archive is within the extraction cap', function () {
+    $zip = new ZipArchive;
+    $zip->open($this->zipPath, ZipArchive::CREATE);
+    $zip->addFromString('dump.sql', str_repeat('A', 500));
+    $zip->close();
+
+    config()->set('notifier.restore_max_extracted_bytes', 1_000_000);
+
+    $written = app(PhpZipExtractor::class)->extract($this->zipPath, $this->destination, '');
+
+    expect($written)->toBe(1)
+        ->and(File::get($this->destination.'/dump.sql'))->toBe(str_repeat('A', 500));
+});
+
+it('still extracts a plaintext archive when NO password is configured', function () {
+    // Symmetry check: the encryption gate only applies when a password is set, so
+    // an install with no backup password keeps working with plain archives.
+    $zip = new ZipArchive;
+    $zip->open($this->zipPath, ZipArchive::CREATE);
+    $zip->addFromString('dump.sql', 'PLAIN DUMP');
+    $zip->close();
+
+    $written = app(PhpZipExtractor::class)->extract($this->zipPath, $this->destination, '');
+
+    expect($written)->toBe(1)
+        ->and(File::get($this->destination.'/dump.sql'))->toBe('PLAIN DUMP');
+});
