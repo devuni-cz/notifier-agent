@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-23
+
 ### Added
 
 -   **Restore commands: `notifier:database-restore` and `notifier:storage-restore`.** Pull this site's own backups back down from the control plane and apply them — for bootstrapping a new node, disaster recovery, or refreshing staging. Restore is authenticated with a **separate** `NOTIFIER_RESTORE_TOKEN`, never the backup code, so leaking the credential that _uploads_ backups cannot also be used to _download_ them; an install with no restore token configured cannot restore at all. Both commands support `--list`, `--dry-run`, `--id=` (defaults to the newest backup) and, in production, require `--force`; the database restore additionally asks you to type the database name to confirm and dumps the current database to a pre-restore snapshot first (skip with `--no-snapshot`). Storage restore is additive — it overwrites files with matching paths but never deletes anything the backup predates.
@@ -166,7 +168,8 @@ The first official release of **`devuni/notifier-agent`** - the client agent of 
 -   The PHP namespace is **`Devuni\Notifier\`** and the env surface uses the established `NOTIFIER_*` keys.
 -   Built on the codebase previously published as `devuni/notifier-package` (2.x). That package is superseded by this one: its `v2.8.0` is the terminal release and all further development happens here. Migration is a one-step `composer remove devuni/notifier-package && composer require devuni/notifier-agent`.
 
-[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.6.2...HEAD
+[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.6.2...v1.7.0
 [1.6.2]: https://github.com/devuni-cz/notifier-agent/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/devuni-cz/notifier-agent/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.5.0...v1.6.0
