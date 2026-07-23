@@ -40,6 +40,24 @@ jobs:
           # absent (tag is still created, but Release must then be run manually).
           token: ${{ secrets.RELEASE_PAT || github.token }}
 
+      # Fail fast on a token that cannot push, instead of after the tag is cut.
+      - name: Verify push permission
+        run: |
+          if ! git push --dry-run origin HEAD:main 2>err.log; then
+            echo "::error::The checkout token cannot push to this repository."
+            echo "::error::If RELEASE_PAT is set it must grant Contents: Read and write on ${{ github.repository }} (org-approved, SSO-authorized if enforced)."
+            cat err.log
+            exit 1
+          fi
+
+      - name: Ensure there is something to release
+        run: |
+          BODY=$(awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md | sed '/^[[:space:]]*$/d')
+          if [ -z "$BODY" ]; then
+            echo "::error::CHANGELOG.md [Unreleased] is empty - nothing to release."
+            exit 1
+          fi
+
       - name: Get current version
         id: current
         run: |
@@ -63,12 +81,30 @@ jobs:
       - name: Update CHANGELOG
         run: |
           VERSION="${{ steps.new.outputs.version }}"
+          TAG="${{ steps.new.outputs.tag }}"
+          PREV="v${{ steps.current.outputs.version }}"
           TODAY=$(date +%Y-%m-%d)
+          REPO_URL="https://github.com/${{ github.repository }}"
 
           # Insert new version section after [Unreleased] block
           sed -i "/^## \[Unreleased\]/a\\
           \\
           ## [${VERSION}] - ${TODAY}" CHANGELOG.md
+
+          # Footer link defs: move [Unreleased] to the new tag, then add this
+          # version's compare link. Without this the heading renders unlinked.
+          if grep -q '^\[Unreleased\]:' CHANGELOG.md; then
+            sed -i "s|^\[Unreleased\]:.*|[Unreleased]: ${REPO_URL}/compare/${TAG}...HEAD|" CHANGELOG.md
+          else
+            printf '\n[Unreleased]: %s/compare/%s...HEAD\n' "${REPO_URL}" "${TAG}" >> CHANGELOG.md
+          fi
+
+          if [ "${PREV}" = "v0.0.0" ]; then
+            LINK="${REPO_URL}/releases/tag/${TAG}"
+          else
+            LINK="${REPO_URL}/compare/${PREV}...${TAG}"
+          fi
+          sed -i "/^\[Unreleased\]:/a [${VERSION}]: ${LINK}" CHANGELOG.md
 
           echo "Updated CHANGELOG.md with version ${VERSION}"
 

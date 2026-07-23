@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+-   **Restore commands: `notifier:database-restore` and `notifier:storage-restore`.** Pull this site's own backups back down from the control plane and apply them — for bootstrapping a new node, disaster recovery, or refreshing staging. Restore is authenticated with a **separate** `NOTIFIER_RESTORE_TOKEN`, never the backup code, so leaking the credential that _uploads_ backups cannot also be used to _download_ them; an install with no restore token configured cannot restore at all. Both commands support `--list`, `--dry-run`, `--id=` (defaults to the newest backup) and, in production, require `--force`; the database restore additionally asks you to type the database name to confirm and dumps the current database to a pre-restore snapshot first (skip with `--no-snapshot`). Storage restore is additive — it overwrites files with matching paths but never deletes anything the backup predates.
+-   **Restore is hardened against a hostile or compromised control plane.** A downloaded archive is verified against the SHA-256 checksum the server recorded at upload time (the listing copy and the response header must agree, and both must match the bytes on disk) before anything is applied. The extractor refuses an archive whose entries are not encrypted, caps the extracted size to defuse zip bombs, and rejects path-traversal (zip-slip) and absolute-path entries. A restored SQL dump is scanned for client-side directives (`\!`, `system`, `source`, `\copy` …) and refused before a single byte reaches the database client, closing an RCE path through a poisoned dump.
+-   **`features.backups` is now a real toggle.** The heartbeat manifest has always advertised a `backups` flag, but the key it reads was never defined in `config/notifier.php`, so it was hard-wired to `true` and could not be turned off. The key now exists and is driven by `NOTIFIER_BACKUPS_ENABLED`, letting a site that intentionally does not back up say so to the control plane instead of appearing to be a silent failure.
+
+### Changed
+
+-   **Announcement config fallbacks now match the shipped defaults.** `AnnouncementsService` fell back to `false` for `features.announcements` and `60` for `announcements.failure_cache_ttl`, while `config/notifier.php` ships `true` and `300`. The in-code fallbacks were aligned with the config. These fallbacks only apply when the key is absent entirely — a site whose **published** config predates these keys will now default announcements to **on** (still a no-op until `NOTIFIER_URL` is set) and cache a failed fetch for 5 minutes instead of 1.
+
+### Removed
+
+-   **Dead code in `BackupTypeEnum`.** `values()` and `validationRule()` had no callers — request validation goes through `Rule::enum` — and were removed.
+
+### Internal
+
+-   CI matrix now also covers PHP 8.5 + Laravel 12, the one supported combination that was untested.
+-   CHANGELOG compare links, README badge and `VERSION_MANAGEMENT.md` corrected; `TODO.md` refreshed against the actual state of the code.
+
 ## [1.6.2] - 2026-06-18
 
 ### Fixed

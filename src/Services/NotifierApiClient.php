@@ -88,6 +88,26 @@ final class NotifierApiClient
     }
 
     /**
+     * Authenticated GET using an explicitly supplied credential rather than the
+     * backup code - used by restore, which is gated on a separate token.
+     */
+    public function getWith(string $path, string $token, int $timeout = 30): Response
+    {
+        return $this->pending($timeout, $token)->get($this->url($path));
+    }
+
+    /**
+     * Stream a response body straight to disk. Backups are far too large to
+     * buffer in memory, so the body is sunk to $destination as it arrives.
+     */
+    public function downloadTo(string $path, string $destination, string $token, int $timeout = 900): Response
+    {
+        return $this->pending($timeout, $token)
+            ->sink($destination)
+            ->get($this->url($path));
+    }
+
+    /**
      * Authenticated JSON POST to `{baseUrl}/{path}`.
      *
      * @param  array<string, mixed>  $data
@@ -219,14 +239,14 @@ final class NotifierApiClient
      * A pending request pre-loaded with the transport invariants: timeout,
      * redirects disabled, JSON responses, and the X-Notifier-Token secret.
      */
-    private function pending(int $timeout): PendingRequest
+    private function pending(int $timeout, ?string $token = null): PendingRequest
     {
         return Http::timeout($timeout)
             ->withOptions(['allow_redirects' => false])
             // Without an Accept header, Laravel's abort() on the server renders
             // an HTML error page, which would end up verbatim in our logs.
             ->acceptJson()
-            ->withHeaders($this->authHeaders());
+            ->withHeaders($this->authHeaders($token));
     }
 
     /**
@@ -239,9 +259,11 @@ final class NotifierApiClient
      *
      * @return array<string, string>
      */
-    private function authHeaders(): array
+    private function authHeaders(?string $token = null): array
     {
-        $token = (string) config('notifier.backup_code');
+        // Restore uses its own credential, so the token is overridable; every
+        // other invariant (HTTPS, no redirects, replay signature) still applies.
+        $token ??= (string) config('notifier.backup_code');
         $timestamp = (string) time();
         $nonce = bin2hex(random_bytes(16));
         $hmacKey = hash('sha256', $token);

@@ -6,15 +6,21 @@ namespace Devuni\Notifier;
 
 use Devuni\Notifier\Commands\NotifierCheckCommand;
 use Devuni\Notifier\Commands\NotifierDatabaseBackupCommand;
+use Devuni\Notifier\Commands\NotifierDatabaseRestoreCommand;
 use Devuni\Notifier\Commands\NotifierHeartbeatCommand;
 use Devuni\Notifier\Commands\NotifierInstallCommand;
 use Devuni\Notifier\Commands\NotifierStorageBackupCommand;
+use Devuni\Notifier\Commands\NotifierStorageRestoreCommand;
 use Devuni\Notifier\Interfaces\DatabaseDumperInterface;
+use Devuni\Notifier\Interfaces\DatabaseImporterInterface;
 use Devuni\Notifier\Interfaces\ZipCreatorInterface;
+use Devuni\Notifier\Interfaces\ZipExtractorInterface;
 use Devuni\Notifier\Services\AnnouncementsService;
 use Devuni\Notifier\Services\ChunkedUploadService;
 use Devuni\Notifier\Services\Database\MysqlDumper;
+use Devuni\Notifier\Services\Database\MysqlImporter;
 use Devuni\Notifier\Services\Database\PostgresDumper;
+use Devuni\Notifier\Services\Database\PostgresImporter;
 use Devuni\Notifier\Services\HeartbeatService;
 use Devuni\Notifier\Services\NotifierApiClient;
 use Devuni\Notifier\Services\NotifierConfigService;
@@ -22,7 +28,9 @@ use Devuni\Notifier\Services\NotifierDatabaseService;
 use Devuni\Notifier\Services\NotifierLoggerService;
 use Devuni\Notifier\Services\NotifierStorageService;
 use Devuni\Notifier\Services\Zip\CliZipCreator;
+use Devuni\Notifier\Services\Zip\CliZipExtractor;
 use Devuni\Notifier\Services\Zip\PhpZipCreator;
+use Devuni\Notifier\Services\Zip\PhpZipExtractor;
 use Devuni\Notifier\View\Components\AnnouncementsNotice;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
@@ -46,6 +54,7 @@ final class NotifierServiceProvider extends ServiceProvider
         $this->app->singleton(NotifierStorageService::class);
         $this->app->singleton(AnnouncementsService::class);
         $this->app->singleton(HeartbeatService::class);
+        $this->app->singleton(Services\NotifierRestoreService::class);
 
         // Bind lazily: the actual dumper is resolved on first use, so unsupported
         // drivers (e.g. sqlite in test envs) don't blow up at container resolution
@@ -53,6 +62,31 @@ final class NotifierServiceProvider extends ServiceProvider
         $this->app->singleton(DatabaseDumperInterface::class, fn ($app): DatabaseDumperInterface => new Services\Database\LazyDatabaseDumper(
             fn (): DatabaseDumperInterface => self::resolveDumper($app),
         ));
+
+        // Same lazy rationale as the dumper: restore paths are rare, so an
+        // unsupported driver must not break container resolution elsewhere.
+        $this->app->singleton(DatabaseImporterInterface::class, fn ($app): DatabaseImporterInterface => new Services\Database\LazyDatabaseImporter(
+            fn (): DatabaseImporterInterface => self::resolveImporter($app),
+        ));
+
+        $this->app->singleton(ZipExtractorInterface::class, function ($app): ZipExtractorInterface {
+            $strategy = config('notifier.zip_strategy', 'auto');
+            $logger = $app->make(NotifierLoggerService::class);
+
+            return match ($strategy) {
+                'cli' => CliZipExtractor::isAvailable()
+                    ? new CliZipExtractor($logger)
+                    : throw new RuntimeException('CLI zip strategy requested but 7z is not installed. Install p7zip-full.'),
+                'php' => PhpZipExtractor::isAvailable()
+                    ? new PhpZipExtractor($logger)
+                    : throw new RuntimeException('PHP zip strategy requested but the zip extension is not loaded.'),
+                default => match (true) {
+                    CliZipExtractor::isAvailable() => new CliZipExtractor($logger),
+                    PhpZipExtractor::isAvailable() => new PhpZipExtractor($logger),
+                    default => throw new RuntimeException('No ZIP strategy available. Install 7z (p7zip-full) or enable the PHP zip extension.'),
+                },
+            };
+        });
 
         $this->app->singleton(ZipCreatorInterface::class, function ($app): ZipCreatorInterface {
             $strategy = config('notifier.zip_strategy', 'auto');
@@ -94,9 +128,11 @@ final class NotifierServiceProvider extends ServiceProvider
             $this->commands([
                 NotifierCheckCommand::class,
                 NotifierDatabaseBackupCommand::class,
+                NotifierDatabaseRestoreCommand::class,
                 NotifierHeartbeatCommand::class,
                 NotifierInstallCommand::class,
                 NotifierStorageBackupCommand::class,
+                NotifierStorageRestoreCommand::class,
             ]);
         }
 
@@ -116,14 +152,32 @@ final class NotifierServiceProvider extends ServiceProvider
     }
 
     /**
-     * Resolve the concrete DatabaseDumperInterface implementation for the currently configured connection.
+     * Resolve the concrete DatabaseImporterInterface implementation for the currently configured connection.
      *
      * @throws RuntimeException When the connection or driver is unsupported.
      */
-    private static function resolveDumper(\Illuminate\Contracts\Foundation\Application $app): DatabaseDumperInterface
+    private static function resolveImporter(\Illuminate\Contracts\Foundation\Application $app): DatabaseImporterInterface
     {
         $logger = $app->make(NotifierLoggerService::class);
 
+        $connection = self::resolveConnectionName();
+        $driver = config("database.connections.{$connection}.driver");
+
+        return match ($driver) {
+            'mysql', 'mariadb' => new MysqlImporter($connection, $logger),
+            'pgsql' => new PostgresImporter($connection, $logger),
+            null => throw new RuntimeException(
+                "Database connection '{$connection}' is not configured in config/database.php."
+            ),
+            default => throw new RuntimeException(
+                "Unsupported database driver '{$driver}' for connection '{$connection}'. "
+                .'Supported drivers: mysql, mariadb, pgsql.'
+            ),
+        };
+    }
+
+    private static function resolveConnectionName(): string
+    {
         $connection = config('notifier.database_connection') ?: config('database.default');
 
         if (empty($connection)) {
@@ -132,6 +186,20 @@ final class NotifierServiceProvider extends ServiceProvider
                 .'configure a default Laravel database connection.'
             );
         }
+
+        return (string) $connection;
+    }
+
+    /**
+     * Resolve the concrete DatabaseDumperInterface implementation for the currently configured connection.
+     *
+     * @throws RuntimeException When the connection or driver is unsupported.
+     */
+    private static function resolveDumper(\Illuminate\Contracts\Foundation\Application $app): DatabaseDumperInterface
+    {
+        $logger = $app->make(NotifierLoggerService::class);
+
+        $connection = self::resolveConnectionName();
 
         $driver = config("database.connections.{$connection}.driver");
 
