@@ -72,8 +72,8 @@ final class PhpZipExtractor implements ZipExtractorInterface
                 $stat = $zip->statIndex($i);
 
                 if (is_array($stat)) {
-                    $totalUncompressed += (int) ($stat['size'] ?? 0);
-                    $totalCompressed += (int) ($stat['comp_size'] ?? 0);
+                    $totalUncompressed += (int) $stat['size'];
+                    $totalCompressed += (int) $stat['comp_size'];
                 }
             }
 
@@ -136,7 +136,7 @@ final class PhpZipExtractor implements ZipExtractorInterface
             }
 
             $stat = $zip->statIndex($i);
-            $method = is_array($stat) ? ($stat['encryption_method'] ?? ZipArchive::EM_NONE) : ZipArchive::EM_NONE;
+            $method = is_array($stat) ? $stat['encryption_method'] : ZipArchive::EM_NONE;
 
             if ($method === ZipArchive::EM_NONE) {
                 $zip->close();
