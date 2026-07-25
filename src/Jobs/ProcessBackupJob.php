@@ -9,13 +9,14 @@ use Devuni\Notifier\Services\NotifierDatabaseService;
 use Devuni\Notifier\Services\NotifierLoggerService;
 use Devuni\Notifier\Services\NotifierStorageService;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Throwable;
 
-final class ProcessBackupJob implements ShouldQueue
+final class ProcessBackupJob implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable;
     use InteractsWithQueue;
@@ -26,9 +27,26 @@ final class ProcessBackupJob implements ShouldQueue
 
     public int $tries = 1;
 
+    /**
+     * Release the uniqueness lock after 900s so a crashed worker cannot wedge
+     * the type permanently (matches the job timeout).
+     */
+    public int $uniqueFor = 900;
+
     public function __construct(
         public readonly BackupTypeEnum $backupType,
     ) {}
+
+    /**
+     * One in-flight backup per type: a flood of triggers on a queued connection
+     * collapses to a single queued/running job per type instead of an unbounded
+     * backlog (the queue-path counterpart to the sync-path lock in the trigger
+     * controller).
+     */
+    public function uniqueId(): string
+    {
+        return 'notifier-backup:'.$this->backupType->value;
+    }
 
     public function handle(
         NotifierDatabaseService $databaseService,
