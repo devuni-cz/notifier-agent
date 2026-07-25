@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-07-23
+
+### Security
+
+-   **Bump `guzzlehttp/guzzle` to `^7.15.1` to clear nine dependency advisories.** The previous `^7.11.1` floor still resolved versions affected by seven Guzzle advisories (URI fragments leaking into `Referer` on redirect, host-only cookie scope not preserved, unbounded response cookies, `Proxy-Authorization` sent to origin servers, dot-only cookie domains matching all hosts, a silent HTTPS→cleartext proxy downgrade, and CVE-2026-59883 cookie disclosure/injection via IP-address domains) and, transitively, two `guzzlehttp/psr7` advisories (host confusion via weak URI host validation, CRLF injection in start-line serialization). `^7.15.1` pulls a fixed Guzzle which in turn requires `guzzlehttp/psr7 >= 2.13`, so `composer audit` now reports no advisories. No code changes — the agent's HTTP surface is unchanged.
+
 ## [1.7.0] - 2026-07-23
 
 ### Added
