@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-07-27
+
+### Security
+
+-   **The backup trigger no longer allows a resource-exhaustion flood.** The inbound `POST {prefix}/backup` runs the full dump + zip **synchronously** in the PHP-FPM worker on the default `sync` connection, and its route throttle is per-IP (trivially rotated), so a holder of the trigger secret could stack unbounded concurrent backups and take the client site offline. Each backup type is now serialized with a `Cache::lock` — a second same-type trigger returns **429** instead of piling another dump onto the worker (a database and a storage backup may still run at once), released in `finally` and auto-expiring after 900s so a crashed worker cannot wedge the type — and `ProcessBackupJob` is now `ShouldBeUnique` per type, so a flood on a queued connection collapses to one in-flight job per type instead of an unbounded backlog.
+
 ## [1.7.1] - 2026-07-23
 
 ### Security
