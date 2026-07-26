@@ -6,6 +6,7 @@ use Devuni\Notifier\Services\NotifierConfigService;
 use Devuni\Notifier\Services\NotifierDatabaseService;
 use Devuni\Notifier\Services\NotifierStorageService;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -131,6 +132,50 @@ describe('Backup Workflow Integration', function () {
             );
 
             expect($response->status())->toBeIn([200, 500]);
+        });
+
+        it('refuses a second concurrent backup of the same type with 429', function () {
+            Http::fake(['*' => Http::response('', 200)]);
+
+            // Simulate a backup of this type already running by holding its lock,
+            // so the trigger cannot stack another heavy dump on the FPM worker
+            // (DoS defence against a flood from a leaked/derived trigger secret).
+            $lock = Cache::lock('notifier:backup-run:backup_database', 900);
+            expect($lock->get())->toBeTrue();
+
+            try {
+                $response = $this->postJson(
+                    '/api/notifier/backup',
+                    ['type' => 'backup_database'],
+                    ['X-Notifier-Token' => 'test-backup-code']
+                );
+
+                $response->assertStatus(429);
+                expect($response->json('message'))->toBe('A backup of this type is already in progress.');
+            } finally {
+                $lock->release();
+            }
+        });
+
+        it('still allows a different backup type while one type is locked', function () {
+            Http::fake(['*' => Http::response('', 200)]);
+
+            // The database lock is held; a storage backup takes a separate lock and
+            // is not blocked - only same-type stacking is refused.
+            $lock = Cache::lock('notifier:backup-run:backup_database', 900);
+            $lock->get();
+
+            try {
+                $response = $this->postJson(
+                    '/api/notifier/backup',
+                    ['type' => 'backup_storage'],
+                    ['X-Notifier-Token' => 'test-backup-code']
+                );
+
+                expect($response->status())->not->toBe(429);
+            } finally {
+                $lock->release();
+            }
         });
 
         it('validates API request parameters', function () {
