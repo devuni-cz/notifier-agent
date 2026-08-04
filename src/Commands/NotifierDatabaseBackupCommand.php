@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Devuni\Notifier\Commands;
 
-use Devuni\Notifier\Services\HeartbeatService;
 use Devuni\Notifier\Services\NotifierConfigService;
 use Devuni\Notifier\Services\NotifierDatabaseService;
 use Devuni\Notifier\Traits\ChecksNotifierEnvironmentTrait;
@@ -38,7 +37,6 @@ final class NotifierDatabaseBackupCommand extends Command
             function (string $path) use ($databaseService): void {
                 $databaseService->sendDatabaseBackup($path);
             },
-            HeartbeatService::LAST_DATABASE_BACKUP_KEY,
         );
     }
 }

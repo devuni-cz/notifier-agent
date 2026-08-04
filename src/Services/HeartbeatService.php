@@ -148,7 +148,9 @@ final class HeartbeatService
     }
 
     /**
-     * The ISO8601 timestamp recorded by a backup command, or null if never run.
+     * The ISO8601 timestamp recorded by the upload services after a successful
+     * backup upload (command, trigger and queued paths alike), or null if none
+     * has succeeded yet.
      */
     private function lastBackupAt(string $cacheKey): ?string
     {

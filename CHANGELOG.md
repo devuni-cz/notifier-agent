@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+-   **Bump `guzzlehttp/guzzle` to `^7.15.2` to clear two fresh advisories** (reported 2026-08-03): CVE-2026-69246 (high — a noncanonical host can bypass host-based checks; directly relevant to the agent's trusted-status-URL origin guard) and CVE-2026-69245 (medium — a noncanonical cookie domain keeps subdomain scope). No code changes.
+
+### Fixed
+
+-   **A Laravel 12 client install can no longer resolve an incompatible `nesbot/carbon`.** Laravel 12.62's `Illuminate\Support\Carbon::plus()` override is fatally incompatible with carbon `3.12+` (which added a `?bool $overflow` parameter), and the protective pin lived only in this repository's CI matrix — so CI stayed green while a client site running `composer update` on Laravel 12 could pull carbon 3.12 and crash on boot. The pin is now a composer `conflict` (`nesbot/carbon >= 3.12.0`), so every install resolves carbon 3.11.x until Laravel 12 ships a fix. Laravel 13 accepts carbon `^3.8.4`, so Laravel 13 installs keep working — they are merely held back from 3.12+ until the conflict is lifted.
+-   **Concurrent backup runs can no longer clobber each other's archive.** Every backup wrote `backup-<timestamp>.zip` into `storage/app/private` with one-second resolution, and concurrent runs are real: a database and a storage backup may run at once (the trigger lock is per type), and a scheduled command can meet a trigger-driven run of the same type (the command path takes no lock). The CLI zip creator deletes a pre-existing target as "stale", so a same-second neighbour could delete or overwrite an archive mid-run. Archive names now carry a type prefix **and a random per-run suffix** (`backup-database-<timestamp>-<random>.zip` / `backup-storage-…`), so no two runs can ever share a path; the database dump and its ZIP also share one timestamp instead of taking two.
+-   **Trigger-driven backups now stamp the heartbeat timestamps.** The `last_database_backup_at` / `last_storage_backup_at` success stamp was written only by the artisan commands, so a backup started via the inbound trigger (sync or queued) shipped fine but the heartbeat manifest kept reporting the old timestamp — the control plane could alarm on backups that were in fact running nightly. The stamp now lives in the upload services, at the one point every successful upload passes through, covering the command, sync-trigger and queued paths alike.
+-   **A queued backup job re-checks the environment before running.** `ProcessBackupJob` ran without any environment validation — the trigger route's middleware checks it, but a job dispatched directly from host code (or an env change between dispatch and a queued run) could produce an **unencrypted** database upload when `NOTIFIER_BACKUP_PASSWORD` was missing. The job now fails fast with the missing variable names, matching the command path's refusal to run.
+-   **An effectively-empty storage backup skips cleanly instead of failing against the server.** A site whose `storage/app/public` holds only a placeholder (`.gitkeep`) produced a ~200 B archive: the agent's own "nothing to back up" floor was just 100 B, so the archive shipped — and the control plane rejected it with "Backup too small (< 102 400 B)", turning every scheduled run into a hard failure. The agent floor is now configurable (`NOTIFIER_MIN_STORAGE_BACKUP_BYTES`) and defaults to the server's 102 400 B, so a sub-threshold archive is treated like an empty source: warn + skip (exit 0), no upload, no heartbeat stamp. `.gitkeep` also joined `.gitignore` in the default storage exclusions, so a placeholder-only directory is recognized as empty outright. Database backups are unaffected — a database dump is never legitimately empty, so it always ships.
+-   **CHANGELOG footer links repaired.** The `[1.7.1]` and `[1.7.2]` sections had no link definitions and `[Unreleased]` still compared from `v1.7.0`.
+
 ## [1.7.2] - 2026-07-27
 
 ### Security
@@ -180,7 +193,9 @@ The first official release of **`devuni/notifier-agent`** - the client agent of 
 -   The PHP namespace is **`Devuni\Notifier\`** and the env surface uses the established `NOTIFIER_*` keys.
 -   Built on the codebase previously published as `devuni/notifier-package` (2.x). That package is superseded by this one: its `v2.8.0` is the terminal release and all further development happens here. Migration is a one-step `composer remove devuni/notifier-package && composer require devuni/notifier-agent`.
 
-[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.2...HEAD
+[1.7.2]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.1...v1.7.2
+[1.7.1]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.6.2...v1.7.0
 [1.6.2]: https://github.com/devuni-cz/notifier-agent/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/devuni-cz/notifier-agent/compare/v1.6.0...v1.6.1

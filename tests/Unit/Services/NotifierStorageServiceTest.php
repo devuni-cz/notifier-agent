@@ -53,15 +53,6 @@ describe('NotifierStorageService', function () {
             expect(config('notifier.backup_code'))->toBe('test-code');
         });
 
-        it('generates expected backup filename format', function () {
-            // The service should generate filenames in format: backup-YYYY-MM-DD.zip
-            $expectedPattern = '/backup-\d{4}-\d{2}-\d{2}\.zip$/';
-
-            // Test the pattern itself
-            $testFilename = 'backup-2025-09-08.zip';
-            expect(preg_match($expectedPattern, $testFilename))->toBe(1);
-        });
-
         it('uses correct storage directory', function () {
             $expectedBackupDir = storage_path('app/private');
             $expectedSourceDir = storage_path('app/public');
@@ -116,16 +107,10 @@ describe('NotifierStorageService', function () {
             expect(mb_strlen($validPath))->toBeGreaterThan(0);
         });
 
-        it('generates unique filenames by date', function () {
-            // Test that different dates would generate different filenames
-            $date1 = '2025-09-08';
-            $date2 = '2025-09-09';
-
-            $filename1 = "backup-{$date1}.zip";
-            $filename2 = "backup-{$date2}.zip";
-
-            expect($filename1)->not->toBe($filename2);
-        });
+        // The archive naming contract (type prefix + random per-run suffix) is
+        // asserted behaviourally against the real upload's `filename` field in
+        // ProcessBackupJobTest - a literal-vs-regex check here would pass even
+        // if the service's naming regressed.
 
         it('should handle file exclusion patterns', function () {
             $excludedFiles = ['.gitignore', 'node_modules/', 'vendor/'];
