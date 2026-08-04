@@ -31,7 +31,7 @@ use Illuminate\Support\Facades\Http;
  * the job's method injection runs the real create -> upload flow without
  * mysqldump, a real Process, or the network.
  */
-function bindJobFakeBackupServices(int $storageArchiveBytes = 600): void
+function bindJobFakeBackupServices(int $storageArchiveBytes = 200_000): void
 {
     $dumper = new class implements DatabaseDumperInterface
     {
@@ -152,7 +152,8 @@ describe('handle() behaviour', function () {
 
     it('skips the upload and leaves the heartbeat unstamped when the storage archive is empty', function () {
         File::ensureDirectoryExists(storage_path('app/public'));
-        // A < 100 B archive is treated as "nothing to back up" by the service.
+        // An archive below the min_storage_backup_bytes floor is treated as
+        // "nothing to back up" by the service.
         bindJobFakeBackupServices(storageArchiveBytes: 10);
 
         app()->call([new ProcessBackupJob(BackupTypeEnum::Storage), 'handle']);

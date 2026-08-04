@@ -162,7 +162,22 @@ return [
     */
     'excluded_files' => [
         '.gitignore',
+        '.gitkeep',
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Minimum Storage Backup Size
+    |--------------------------------------------------------------------------
+    |
+    | A storage archive smaller than this many bytes is treated as "nothing to
+    | back up": the upload is skipped with a warning instead of shipping an
+    | effectively empty archive that the control plane rejects anyway (the
+    | server enforces the same 100 KiB floor). Storage backups only - a
+    | database dump is never legitimately empty, so it always ships.
+    |
+    */
+    'min_storage_backup_bytes' => env('NOTIFIER_MIN_STORAGE_BACKUP_BYTES', 102400),
 
     /*
     |--------------------------------------------------------------------------

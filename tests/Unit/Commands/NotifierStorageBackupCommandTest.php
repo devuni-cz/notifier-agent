@@ -26,10 +26,11 @@ use Illuminate\Support\Facades\Http;
  *   - $throw = null               -> the zip creator writes a $bytes-long archive
  *   - $throw = RuntimeException    -> the zip creator throws it (propagates unless
  *                                     the message starts with "No files to backup")
- *   - $bytes < 100                 -> createStorageBackup() treats the archive as
- *                                     too small/corrupt and returns '' (no upload)
+ *   - $bytes below the notifier.min_storage_backup_bytes floor (default 100 KiB)
+ *     -> createStorageBackup() treats the archive as "nothing to back up" and
+ *     returns '' (no upload)
  */
-function bindFakeStorageService(?RuntimeException $throw = null, int $bytes = 550): void
+function bindFakeStorageService(?RuntimeException $throw = null, int $bytes = 200_000): void
 {
     $zip = new class($throw, $bytes) implements ZipCreatorInterface
     {
@@ -46,7 +47,6 @@ function bindFakeStorageService(?RuntimeException $throw = null, int $bytes = 55
                 throw $this->throw;
             }
 
-            // >= 100 bytes is a valid archive; < 100 bytes is treated as corrupt.
             file_put_contents($zipPath, str_repeat('Z', $this->bytes));
 
             return 1;
@@ -149,7 +149,7 @@ describe('NotifierStorageBackupCommand', function () {
 
         it('skips with a warning (exit 0) and does not stamp the heartbeat when the archive is too small/corrupt', function () {
             Cache::forget(HeartbeatService::LAST_STORAGE_BACKUP_KEY);
-            // A non-empty source that yields a <100-byte archive (truncated/corrupt
+            // A non-empty source that yields a near-zero archive (truncated/corrupt
             // write) must NOT report success or stamp the heartbeat - the old code
             // silently skipped the upload yet still reported a green backup.
             bindFakeStorageService(bytes: 8);
@@ -160,6 +160,30 @@ describe('NotifierStorageBackupCommand', function () {
 
             expect(Cache::get(HeartbeatService::LAST_STORAGE_BACKUP_KEY))->toBeNull();
             Http::assertNotSent(fn ($request) => str_contains($request->url(), '/uploads/init'));
+        });
+
+        it('skips a real but sub-threshold archive instead of shipping it into the server\'s "Backup too small" rejection', function () {
+            Cache::forget(HeartbeatService::LAST_STORAGE_BACKUP_KEY);
+            // The staging scenario: a placeholder-only storage produces a ~200 B
+            // archive. The agent floor matches the server's 100 KiB rejection
+            // threshold, so this must be a graceful skip, not a failed upload.
+            bindFakeStorageService(bytes: 550);
+
+            $this->artisan('notifier:storage-backup')
+                ->expectsOutputToContain('Nothing to back up')
+                ->assertExitCode(0);
+
+            expect(Cache::get(HeartbeatService::LAST_STORAGE_BACKUP_KEY))->toBeNull();
+            Http::assertNotSent(fn ($request) => str_contains($request->url(), '/uploads/init'));
+        });
+
+        it('honours a site-specific NOTIFIER_MIN_STORAGE_BACKUP_BYTES override', function () {
+            Config::set('notifier.min_storage_backup_bytes', 100);
+            bindFakeStorageService(bytes: 550);
+
+            $this->artisan('notifier:storage-backup')->assertExitCode(0);
+
+            Http::assertSent(fn ($request) => str_contains($request->url(), '/uploads/init'));
         });
 
         it('records the last storage backup time for the heartbeat manifest on success', function () {

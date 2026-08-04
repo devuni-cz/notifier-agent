@@ -75,15 +75,20 @@ final class NotifierStorageService
             throw $e;
         }
 
-        // A non-empty source that still produces a tiny archive means the write
-        // was truncated or corrupt. Treat it like an empty source (return '')
+        // A non-empty source that still produces a sub-threshold archive means
+        // there is nothing meaningful to back up (a placeholder-only directory)
+        // or the write was truncated. Treat it like an empty source (return '')
         // so the caller's "nothing to back up" skip handles it - never report a
-        // successful backup or stamp the heartbeat for an archive we won't send.
+        // successful backup or stamp the heartbeat for an archive we won't
+        // send, and never ship an archive the control plane rejects as "Backup
+        // too small" anyway (the server enforces the same 100 KiB floor).
         $size = filesize($path);
+        $minBytes = $this->minBackupBytes();
 
-        if ($size === false || $size < 100) {
-            $logger->warning('⚠️ backup archive is empty or too small, skipping upload', [
+        if ($size === false || $size < $minBytes) {
+            $logger->warning('⚠️ backup archive is below the minimum size, skipping upload', [
                 'file_size' => $size,
+                'min_bytes' => $minBytes,
                 'path' => $path,
             ]);
 
@@ -104,10 +109,12 @@ final class NotifierStorageService
         $logger->info('➡️ preparing file for sending');
 
         $size = filesize($path);
+        $minBytes = $this->minBackupBytes();
 
-        if ($size === false || $size < 100) {
-            $logger->warning('⚠️ backup archive is empty or too small, skipping upload', [
+        if ($size === false || $size < $minBytes) {
+            $logger->warning('⚠️ backup archive is below the minimum size, skipping upload', [
                 'file_size' => $size,
+                'min_bytes' => $minBytes,
                 'path' => $path,
             ]);
 
@@ -150,5 +157,14 @@ final class NotifierStorageService
             File::delete($path);
             $logger->info('➡️ backup file cleaned up');
         }
+    }
+
+    /**
+     * The agent-side floor mirroring the control plane's "Backup too small"
+     * rejection threshold (102 400 B), overridable per site.
+     */
+    private function minBackupBytes(): int
+    {
+        return max(1, (int) config('notifier.min_storage_backup_bytes', 102400));
     }
 }
