@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Devuni\Notifier\Commands;
 
-use Devuni\Notifier\Services\HeartbeatService;
 use Devuni\Notifier\Services\NotifierConfigService;
 use Devuni\Notifier\Services\NotifierStorageService;
 use Devuni\Notifier\Traits\ChecksNotifierEnvironmentTrait;
@@ -38,7 +37,6 @@ final class NotifierStorageBackupCommand extends Command
             function (string $path) use ($storageService): void {
                 $storageService->sendStorageBackup($path);
             },
-            HeartbeatService::LAST_STORAGE_BACKUP_KEY,
         );
     }
 }
