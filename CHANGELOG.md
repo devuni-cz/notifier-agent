@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.3] - 2026-08-05
+
 ### Security
 
 -   **Bump `guzzlehttp/guzzle` to `^7.15.2` to clear two fresh advisories** (reported 2026-08-03): CVE-2026-69246 (high — a noncanonical host can bypass host-based checks; directly relevant to the agent's trusted-status-URL origin guard) and CVE-2026-69245 (medium — a noncanonical cookie domain keeps subdomain scope). No code changes.
@@ -193,7 +195,8 @@ The first official release of **`devuni/notifier-agent`** - the client agent of 
 -   The PHP namespace is **`Devuni\Notifier\`** and the env surface uses the established `NOTIFIER_*` keys.
 -   Built on the codebase previously published as `devuni/notifier-package` (2.x). That package is superseded by this one: its `v2.8.0` is the terminal release and all further development happens here. Migration is a one-step `composer remove devuni/notifier-package && composer require devuni/notifier-agent`.
 
-[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.2...HEAD
+[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.3...HEAD
+[1.7.3]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.2...v1.7.3
 [1.7.2]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.6.2...v1.7.0
