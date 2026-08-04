@@ -7,6 +7,7 @@ namespace Devuni\Notifier\Services;
 use Carbon\Carbon;
 use Devuni\Notifier\Enums\BackupTypeEnum;
 use Devuni\Notifier\Interfaces\ZipCreatorInterface;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 use Throwable;
@@ -28,7 +29,12 @@ final class NotifierStorageService
         $backupDirectory = storage_path('app/private');
         File::ensureDirectoryExists($backupDirectory);
 
-        $filename = 'backup-'.Carbon::now()->format('Y-m-d_H-i-s').'.zip';
+        // Type prefix + random per-run suffix: the prefix separates the two
+        // backup types, the suffix keeps two same-type runs apart (the command,
+        // sync-trigger and queue paths are not serialized against each other,
+        // and the zip creator deletes a pre-existing target as "stale") - so
+        // no two runs can ever share a path, even within the same second.
+        $filename = 'backup-storage-'.Carbon::now()->format('Y-m-d_H-i-s').'-'.bin2hex(random_bytes(4)).'.zip';
         $path = $backupDirectory.'/'.$filename;
 
         $logger->info('➡️ creating backup file');
@@ -69,15 +75,20 @@ final class NotifierStorageService
             throw $e;
         }
 
-        // A non-empty source that still produces a tiny archive means the write
-        // was truncated or corrupt. Treat it like an empty source (return '')
+        // A non-empty source that still produces a sub-threshold archive means
+        // there is nothing meaningful to back up (a placeholder-only directory)
+        // or the write was truncated. Treat it like an empty source (return '')
         // so the caller's "nothing to back up" skip handles it - never report a
-        // successful backup or stamp the heartbeat for an archive we won't send.
+        // successful backup or stamp the heartbeat for an archive we won't
+        // send, and never ship an archive the control plane rejects as "Backup
+        // too small" anyway (the server enforces the same 100 KiB floor).
         $size = filesize($path);
+        $minBytes = $this->minBackupBytes();
 
-        if ($size === false || $size < 100) {
-            $logger->warning('⚠️ backup archive is empty or too small, skipping upload', [
+        if ($size === false || $size < $minBytes) {
+            $logger->warning('⚠️ backup archive is below the minimum size, skipping upload', [
                 'file_size' => $size,
+                'min_bytes' => $minBytes,
                 'path' => $path,
             ]);
 
@@ -98,10 +109,12 @@ final class NotifierStorageService
         $logger->info('➡️ preparing file for sending');
 
         $size = filesize($path);
+        $minBytes = $this->minBackupBytes();
 
-        if ($size === false || $size < 100) {
-            $logger->warning('⚠️ backup archive is empty or too small, skipping upload', [
+        if ($size === false || $size < $minBytes) {
+            $logger->warning('⚠️ backup archive is below the minimum size, skipping upload', [
                 'file_size' => $size,
+                'min_bytes' => $minBytes,
                 'path' => $path,
             ]);
 
@@ -113,6 +126,19 @@ final class NotifierStorageService
 
         try {
             $this->uploadService->upload($path, BackupTypeEnum::Storage->value);
+
+            // Stamp the heartbeat timestamp here, at the one point every
+            // successful upload passes through (artisan command, sync trigger
+            // and queued job alike), so the manifest never reports a backup
+            // that failed or was skipped. Best-effort: a cache-store hiccup
+            // must not turn an upload that already succeeded into a failure.
+            try {
+                Cache::forever(HeartbeatService::LAST_STORAGE_BACKUP_KEY, now()->toIso8601String());
+            } catch (Throwable $e) {
+                $logger->warning('⚠️ could not record the last-backup timestamp for the heartbeat', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             $logger->info('➡️ file was sent');
             $logger->info('✅ END OF BACKUP');
@@ -131,5 +157,14 @@ final class NotifierStorageService
             File::delete($path);
             $logger->info('➡️ backup file cleaned up');
         }
+    }
+
+    /**
+     * The agent-side floor mirroring the control plane's "Backup too small"
+     * rejection threshold (102 400 B), overridable per site.
+     */
+    private function minBackupBytes(): int
+    {
+        return max(1, (int) config('notifier.min_storage_backup_bytes', 102400));
     }
 }

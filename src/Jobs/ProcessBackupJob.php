@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Devuni\Notifier\Jobs;
 
 use Devuni\Notifier\Enums\BackupTypeEnum;
+use Devuni\Notifier\Services\NotifierConfigService;
 use Devuni\Notifier\Services\NotifierDatabaseService;
 use Devuni\Notifier\Services\NotifierLoggerService;
 use Devuni\Notifier\Services\NotifierStorageService;
@@ -14,6 +15,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use RuntimeException;
 use Throwable;
 
 final class ProcessBackupJob implements ShouldBeUnique, ShouldQueue
@@ -49,12 +51,26 @@ final class ProcessBackupJob implements ShouldBeUnique, ShouldQueue
     }
 
     public function handle(
+        NotifierConfigService $configService,
         NotifierDatabaseService $databaseService,
         NotifierStorageService $storageService,
         NotifierLoggerService $notifierLogger,
     ): void {
         $logger = $notifierLogger->get();
         $startTime = microtime(true);
+
+        // The trigger route's middleware already verifies the environment, but
+        // this job can also be dispatched directly from host code, and the env
+        // can change between dispatch and a queued run. Re-check here so a
+        // missing NOTIFIER_BACKUP_PASSWORD can never produce an unencrypted
+        // upload (the command path refuses to run for the same reason).
+        $missing = $configService->checkEnvironment();
+
+        if ($missing !== []) {
+            throw new RuntimeException(
+                'Backup aborted - missing environment variables: '.implode(', ', $missing)
+            );
+        }
 
         $logger->info('🚀 backup job started', [
             'backup_type' => $this->backupType->value,

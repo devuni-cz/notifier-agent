@@ -9,6 +9,7 @@ use Devuni\Notifier\Enums\BackupTypeEnum;
 use Devuni\Notifier\Interfaces\DatabaseDumperInterface;
 use Devuni\Notifier\Interfaces\ZipCreatorInterface;
 use Devuni\Notifier\Services\Database\LazyDatabaseDumper;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 use Throwable;
@@ -31,8 +32,13 @@ final class NotifierDatabaseService
         $backupDirectory = storage_path('app/private');
         File::ensureDirectoryExists($backupDirectory);
 
-        $filename = 'backup-'.Carbon::now()->format('Y-m-d_H-i-s').'.sql';
-        $path = $backupDirectory.'/'.$filename;
+        // Type prefix + random per-run suffix: the prefix separates the two
+        // backup types, the suffix keeps two same-type runs apart (the command,
+        // sync-trigger and queue paths are not serialized against each other,
+        // and the zip creator deletes a pre-existing target as "stale") - so
+        // no two runs can ever share a path, even within the same second.
+        $basename = 'backup-database-'.Carbon::now()->format('Y-m-d_H-i-s').'-'.bin2hex(random_bytes(4));
+        $path = $backupDirectory.'/'.$basename.'.sql';
 
         // Log the concrete dumper, not the lazy proxy, so the entry distinguishes
         // MySQL vs PostgreSQL backups.
@@ -78,7 +84,7 @@ final class NotifierDatabaseService
         $password = config('notifier.backup_zip_password');
 
         if (! empty($password)) {
-            $zipPath = $backupDirectory.'/backup-'.Carbon::now()->format('Y-m-d_H-i-s').'.zip';
+            $zipPath = $backupDirectory.'/'.$basename.'.zip';
 
             try {
                 $this->zipCreator->create($path, $zipPath, $password, []);
@@ -105,6 +111,19 @@ final class NotifierDatabaseService
 
         try {
             $this->uploadService->upload($path, BackupTypeEnum::Database->value);
+
+            // Stamp the heartbeat timestamp here, at the one point every
+            // successful upload passes through (artisan command, sync trigger
+            // and queued job alike), so the manifest never reports a backup
+            // that failed or was skipped. Best-effort: a cache-store hiccup
+            // must not turn an upload that already succeeded into a failure.
+            try {
+                Cache::forever(HeartbeatService::LAST_DATABASE_BACKUP_KEY, now()->toIso8601String());
+            } catch (Throwable $e) {
+                $logger->warning('⚠️ could not record the last-backup timestamp for the heartbeat', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             $logger->info('➡️ file was sent');
             $logger->info('✅ END OF BACKUP');

@@ -137,7 +137,7 @@ Or run it on demand:
 php artisan notifier:heartbeat
 ```
 
-Each heartbeat `POST {NOTIFIER_URL}/heartbeat` (per-repository, same `X-Notifier-Token`) reports an identity + liveness manifest: the **agent / PHP / Laravel versions**, the **queue connection**, which **features** are enabled (announcements, backups, heartbeat), **free + total disk bytes** on the storage volume, the **last database & storage backup times** (recorded automatically when `notifier:database-backup` / `notifier:storage-backup` succeed), and the agent's own clock (`reported_at`). The server stamps its own receipt time - the agent never sends that. Unlike announcements, the heartbeat is a **push**: a rejected or unreachable server makes the command exit non-zero (and log to the `backup` channel), so your scheduler's failure handling can react.
+Each heartbeat `POST {NOTIFIER_URL}/heartbeat` (per-repository, same `X-Notifier-Token`) reports an identity + liveness manifest: the **agent / PHP / Laravel versions**, the **queue connection**, which **features** are enabled (announcements, backups, heartbeat), **free + total disk bytes** on the storage volume, the **last database & storage backup times** (recorded automatically after any successful backup upload - the artisan commands, the inbound trigger and queued jobs alike), and the agent's own clock (`reported_at`). The server stamps its own receipt time - the agent never sends that. Unlike announcements, the heartbeat is a **push**: a rejected or unreachable server makes the command exit non-zero (and log to the `backup` channel), so your scheduler's failure handling can react.
 
 ## Configure
 
