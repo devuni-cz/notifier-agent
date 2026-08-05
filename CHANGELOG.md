@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-08-05
+
 ### Added
 
 -   **The restore workflow is now discoverable end to end** ([#27](https://github.com/devuni-cz/notifier-agent/issues/27)). The `notifier:database-restore` / `notifier:storage-restore` commands have existed since 1.7.0, but nothing surfaced them: the README never mentioned them and a fresh install had no `NOTIFIER_RESTORE_TOKEN`, so restore was silently disabled until the operator discovered it from a runtime error.
@@ -203,7 +205,8 @@ The first official release of **`devuni/notifier-agent`** - the client agent of 
 -   The PHP namespace is **`Devuni\Notifier\`** and the env surface uses the established `NOTIFIER_*` keys.
 -   Built on the codebase previously published as `devuni/notifier-package` (2.x). That package is superseded by this one: its `v2.8.0` is the terminal release and all further development happens here. Migration is a one-step `composer remove devuni/notifier-package && composer require devuni/notifier-agent`.
 
-[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.3...HEAD
+[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.3...v1.8.0
 [1.7.3]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.2...v1.7.3
 [1.7.2]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.0...v1.7.1
