@@ -53,15 +53,25 @@ Heads-up when coming from `notifier-package` ≤ 2.7.x: version 2.8.0+ introduce
 
 ## Usage
 
-### Scheduled backups (recommended)
+### Scheduled backups
 
-Add to `routes/console.php`:
+There are two ways to run backups on a schedule - pick **one**:
+
+**Managed by the control plane (default for Devuni-managed sites).** The Notifier server triggers backups remotely through the [HTTP API](#http-api) at the frequency configured in the repository settings on the control plane. Nothing to schedule on the site: keep the package routes enabled (`NOTIFIER_ROUTES_ENABLED=true`, the default) and the trigger authenticated (`NOTIFIER_TRIGGER_SECRET`, or the backup code in single-secret mode). Do **not** also schedule the backup commands locally - every backup would run twice.
+
+**Self-scheduled (standalone or legacy projects).** Only when the control plane does not trigger this site, schedule the commands yourself - `routes/console.php`:
 
 ```php
 use Illuminate\Support\Facades\Schedule;
 
 Schedule::command('notifier:database-backup')->dailyAt('02:00')->onOneServer();
 Schedule::command('notifier:storage-backup')->weeklyOn(0, '03:00')->onOneServer();
+```
+
+**In both modes** schedule the heartbeat - the control plane never triggers it, the agent pushes it (see [Heartbeat](#heartbeat)):
+
+```php
+Schedule::command('notifier:heartbeat')->hourly()->onOneServer();
 ```
 
 ### On demand
@@ -89,11 +99,11 @@ Restore is authenticated with a **separate** `NOTIFIER_RESTORE_TOKEN` (issued pe
 
 - Copy the **original** `NOTIFIER_BACKUP_PASSWORD` from the old deployment - every archive on the control plane is encrypted with it, so a freshly generated password cannot decrypt anything. Set `NOTIFIER_RESTORE_TOKEN` alongside it.
 - Point the new deployment at the **same** repository `NOTIFIER_URL` as the old one - backup history belongs to the repository, a new repository id has nothing to pull.
-- Don't run the backup commands before the site has data. The control plane rejects near-empty uploads ("Backup too small"), so a database backup of a freshly migrated, empty database is expected to fail - restore first, and let the scheduler take over backups once there is something to back up.
+- Don't run the backup commands before the site has data. The control plane rejects near-empty uploads ("Backup too small"), so a database backup of a freshly migrated, empty database is expected to fail - restore first, and let the scheduled backups (the control plane's triggers, or your cron in self-scheduled mode) take over once there is something to back up.
 
 ### HTTP API
 
-Trigger backups from an external scheduler. Rate-limited to 10 req/hour.
+The inbound trigger endpoint - this is what the control plane's scheduled backup services call; an external scheduler can use it the same way. Rate-limited to 10 req/hour.
 
 ```bash
 curl -X POST https://your-app.com/api/notifier/backup \

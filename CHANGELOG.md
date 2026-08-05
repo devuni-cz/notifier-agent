@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+-   **README no longer recommends scheduling the backup commands on every site.** The "Scheduled backups (recommended)" section presented client-side cron as the default, but Devuni-managed sites are backed up by the **control plane's** scheduled services (frequency configured per repository in the server's repository settings, delivered through the inbound HTTP trigger) — following the old advice would run every backup twice. The section now describes both modes explicitly: control-plane-managed (default, nothing to schedule locally) and self-scheduled (standalone or legacy projects only), with the heartbeat cron required in both.
+
 ## [1.8.0] - 2026-08-05
 
 ### Added
