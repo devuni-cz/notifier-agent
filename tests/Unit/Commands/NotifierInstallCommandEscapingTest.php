@@ -24,6 +24,8 @@ describe('NotifierInstallCommand env escaping', function () {
             ->expectsQuestion('NOTIFIER_URL', 'https://example.com/a b')
             ->expectsConfirmation('Generate a strong backup password automatically?', 'no')
             ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'pa\\ss "word" longtail')
+            ->expectsConfirmation('Configure a restore token now?', 'no')
+            ->expectsConfirmation('Generate a dedicated inbound trigger secret?', 'no')
             ->assertExitCode(0);
 
         $envContent = file_get_contents(base_path('.env'));
@@ -53,8 +55,11 @@ describe('NotifierInstallCommand env escaping', function () {
         $this->artisan('notifier:install', ['--force' => true])
             ->expectsQuestion('NOTIFIER_BACKUP_CODE', 'new \\ "code"')
             ->expectsQuestion('NOTIFIER_URL', 'https://new.example.com')
+            ->expectsConfirmation('Keep the existing backup password?', 'no')
             ->expectsConfirmation('Generate a strong backup password automatically?', 'no')
             ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'C:\\secret\\path\\longer')
+            ->expectsConfirmation('Configure a restore token now?', 'no')
+            ->expectsConfirmation('Generate a dedicated inbound trigger secret?', 'no')
             ->assertExitCode(0);
 
         $envContent = file_get_contents(base_path('.env'));
@@ -78,6 +83,8 @@ describe('NotifierInstallCommand env escaping', function () {
             ->expectsQuestion('NOTIFIER_URL', 'https://example.com')
             ->expectsConfirmation('Generate a strong backup password automatically?', 'no')
             ->expectsQuestion('NOTIFIER_BACKUP_PASSWORD', 'pass\\word longer123')
+            ->expectsConfirmation('Configure a restore token now?', 'no')
+            ->expectsConfirmation('Generate a dedicated inbound trigger secret?', 'no')
             ->assertExitCode(0);
 
         // Re-running without --force refuses to overwrite.

@@ -34,6 +34,7 @@ final class NotifierCheckCommand extends Command
         $this->displayNotifierHeader('Health Check');
 
         $this->checkEnvironmentVariables($configService);
+        $this->checkRestoreAndTriggerCredentials();
         $this->checkDatabaseConnection();
         $this->checkStorageDirectories();
         $this->checkDatabaseDumpTool();
@@ -82,6 +83,51 @@ final class NotifierCheckCommand extends Command
         $this->detail('NOTIFIER_BACKUP_CODE', $this->maskValue(config('notifier.backup_code')));
         $this->detail('NOTIFIER_URL', '<fg=cyan>'.(config('notifier.backup_url') ?: '(empty)').'</>');
         $this->detail('NOTIFIER_BACKUP_PASSWORD', $this->maskValue(config('notifier.backup_zip_password')));
+    }
+
+    /**
+     * Report the state of the optional split credentials: the restore token
+     * (without which the notifier:*-restore commands are disabled) and the
+     * dedicated inbound trigger secret (without which the backup code doubles
+     * as the trigger secret).
+     */
+    private function checkRestoreAndTriggerCredentials(): void
+    {
+        $this->section('restore & trigger credentials');
+
+        $status = self::STATUS_PASS;
+
+        $restoreToken = config('notifier.restore_token');
+
+        if (is_string($restoreToken) && $restoreToken !== '' && $restoreToken === config('notifier.backup_code')) {
+            // A pasted-by-mistake backup code must not present as a green
+            // check: the control plane refuses it and restore stays broken.
+            $this->warnLine('Restore token equals the backup code - the control plane will refuse it (the restore token is a separate credential)');
+            $this->hint('Issue a restore token for this repository on the control plane and set NOTIFIER_RESTORE_TOKEN');
+            $status = $this->worst($status, self::STATUS_WARN);
+        } elseif (is_string($restoreToken) && $restoreToken !== '') {
+            $this->passLine('Restore token is configured - notifier:database-restore / notifier:storage-restore are available');
+            $this->detail('NOTIFIER_RESTORE_TOKEN', $this->maskValue($restoreToken));
+        } else {
+            $this->warnLine('Restore token is not set - the notifier:*-restore commands are disabled');
+            $this->hint('Issue a restore token for this repository on the control plane and set NOTIFIER_RESTORE_TOKEN');
+            $status = $this->worst($status, self::STATUS_WARN);
+        }
+
+        // The config fallback chain resolves trigger_secret to the backup code
+        // when no dedicated secret is set, so equality with the backup code is
+        // how single-secret mode presents here.
+        $triggerSecret = config('notifier.trigger_secret');
+
+        if (is_string($triggerSecret) && $triggerSecret !== '' && $triggerSecret !== config('notifier.backup_code')) {
+            $this->passLine('Dedicated trigger secret is configured for the inbound backup trigger');
+            $this->detail('NOTIFIER_TRIGGER_SECRET', $this->maskValue($triggerSecret));
+        } else {
+            $this->infoLine('The backup code doubles as the inbound trigger secret (single-secret mode)');
+            $this->hint('Optionally set a dedicated NOTIFIER_TRIGGER_SECRET - and configure the same value on the control plane');
+        }
+
+        $this->record('Restore & trigger credentials', $status);
     }
 
     /**

@@ -71,6 +71,26 @@ php artisan notifier:database-backup
 php artisan notifier:storage-backup
 ```
 
+### Restore & bootstrap
+
+Pull this site's own backups back down from the control plane - for bootstrapping a fresh deployment, disaster recovery, or refreshing staging:
+
+```bash
+php artisan notifier:database-restore --list   # see what is available
+php artisan notifier:database-restore          # apply the newest database backup
+php artisan notifier:storage-restore           # apply the newest storage backup
+```
+
+Both commands support `--list`, `--id=`, `--dry-run` (download + verify without applying) and require `--force` in production; the database restore additionally asks you to type the database name to confirm and dumps the current database to a pre-restore snapshot first (skip with `--no-snapshot`). Storage restore is additive - it overwrites files with matching paths but never deletes anything.
+
+Restore is authenticated with a **separate** `NOTIFIER_RESTORE_TOKEN` (issued per repository on the control plane) - never the backup code - so leaking the credential that *uploads* backups cannot be used to *download* them. Without the token the restore commands are disabled. `notifier:install` offers to configure it, and `notifier:check` warns when it is missing.
+
+**Bootstrapping a fresh deployment:** deploy → configure `.env` → run both restore commands (with `--force` on production) → done. Three things to know:
+
+- Copy the **original** `NOTIFIER_BACKUP_PASSWORD` from the old deployment - every archive on the control plane is encrypted with it, so a freshly generated password cannot decrypt anything. Set `NOTIFIER_RESTORE_TOKEN` alongside it.
+- Point the new deployment at the **same** repository `NOTIFIER_URL` as the old one - backup history belongs to the repository, a new repository id has nothing to pull.
+- Don't run the backup commands before the site has data. The control plane rejects near-empty uploads ("Backup too small"), so a database backup of a freshly migrated, empty database is expected to fail - restore first, and let the scheduler take over backups once there is something to back up.
+
 ### HTTP API
 
 Trigger backups from an external scheduler. Rate-limited to 10 req/hour.
@@ -80,6 +100,8 @@ curl -X POST https://your-app.com/api/notifier/backup \
   -H "X-Notifier-Token: your-token" \
   -d "type=backup_database"   # or backup_storage
 ```
+
+The token is the site's `NOTIFIER_TRIGGER_SECRET`; when no dedicated trigger secret is configured, the backup code is accepted instead (single-secret mode).
 
 On failure the response returns an opaque `error_id` (UUID) - the full detail (stack trace, `mysqldump`/7z stderr) stays in your `backup` log channel. Grep logs for the UUID to correlate.
 
@@ -149,7 +171,9 @@ NOTIFIER_URL=https://notifier.devuni.cz/api/v1/repositories/123 # your endpoint
 NOTIFIER_BACKUP_PASSWORD=...                                    # ZIP password
 ```
 
-Optional: `NOTIFIER_LOGGING_CHANNEL`, `NOTIFIER_ROUTES_ENABLED`, `NOTIFIER_ROUTE_PREFIX`, `NOTIFIER_ZIP_STRATEGY` (`auto`/`cli`/`php`), `NOTIFIER_CHUNK_SIZE`, `NOTIFIER_QUEUE_CONNECTION`, `NOTIFIER_DATABASE_CONNECTION`, `NOTIFIER_POSTGRES_DUMP_BINARY`, `NOTIFIER_POSTGRES_SCHEMA`, `NOTIFIER_HEARTBEAT_ENABLED`. See [`config/notifier.php`](config/notifier.php) for defaults and descriptions.
+Optional credentials: `NOTIFIER_RESTORE_TOKEN` (enables the `notifier:*-restore` commands; issued per repository on the control plane), `NOTIFIER_TRIGGER_SECRET` (dedicated inbound trigger secret - without it the backup code doubles as the trigger secret; the control plane must be configured with the same value).
+
+Other options: `NOTIFIER_LOGGING_CHANNEL`, `NOTIFIER_ROUTES_ENABLED`, `NOTIFIER_ROUTE_PREFIX`, `NOTIFIER_ZIP_STRATEGY` (`auto`/`cli`/`php`), `NOTIFIER_CHUNK_SIZE`, `NOTIFIER_MIN_STORAGE_BACKUP_BYTES`, `NOTIFIER_QUEUE_CONNECTION`, `NOTIFIER_DATABASE_CONNECTION`, `NOTIFIER_POSTGRES_DUMP_BINARY`, `NOTIFIER_POSTGRES_SCHEMA`, `NOTIFIER_HEARTBEAT_ENABLED`. See [`config/notifier.php`](config/notifier.php) for defaults and descriptions.
 
 ### Database engine
 

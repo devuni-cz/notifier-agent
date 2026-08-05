@@ -35,6 +35,53 @@ describe('NotifierCheckCommand', function () {
         });
     });
 
+    describe('restore & trigger credential checks', function () {
+        it('warns when the restore token is missing (restore commands disabled)', function () {
+            config(['notifier.restore_token' => null]);
+
+            $this->artisan('notifier:check')
+                ->expectsOutputToContain('Restore token is not set');
+        });
+
+        it('passes when the restore token is configured', function () {
+            config(['notifier.restore_token' => 'issued-token']);
+
+            $this->artisan('notifier:check')
+                ->expectsOutputToContain('Restore token is configured');
+        });
+
+        it('warns instead of passing when the restore token is actually the backup code', function () {
+            config([
+                'notifier.backup_code' => 'shared-value',
+                'notifier.restore_token' => 'shared-value',
+            ]);
+
+            $this->artisan('notifier:check')
+                ->expectsOutputToContain('Restore token equals the backup code');
+        });
+
+        it('reports single-secret mode when the trigger secret falls back to the backup code', function () {
+            config([
+                'notifier.backup_code' => 'shared-code',
+                'notifier.trigger_secret' => 'shared-code',
+            ]);
+
+            $this->artisan('notifier:check')
+                ->expectsOutputToContain('single-secret mode');
+        });
+
+        it('reports a dedicated trigger secret without leaking it', function () {
+            config([
+                'notifier.backup_code' => 'backup-code',
+                'notifier.trigger_secret' => 'dedicated-trigger-secret',
+            ]);
+
+            $this->artisan('notifier:check')
+                ->expectsOutputToContain('Dedicated trigger secret is configured')
+                ->doesntExpectOutputToContain('dedicated-trigger-secret');
+        });
+    });
+
     describe('environment variable checks', function () {
         it('passes when all environment variables are configured', function () {
             config([
