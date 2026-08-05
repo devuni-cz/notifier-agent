@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+-   **The restore workflow is now discoverable end to end** ([#27](https://github.com/devuni-cz/notifier-agent/issues/27)). The `notifier:database-restore` / `notifier:storage-restore` commands have existed since 1.7.0, but nothing surfaced them: the README never mentioned them and a fresh install had no `NOTIFIER_RESTORE_TOKEN`, so restore was silently disabled until the operator discovered it from a runtime error.
+    -   `notifier:install` now offers to configure the restore token (issued per repository on the control plane) and to generate a dedicated inbound trigger secret. Both prompts default to **skip**, so the classic three-value install is unchanged — and the trigger-secret prompt warns that the control plane must be configured with the same value before remote triggers work again.
+    -   `notifier:check` gained a "restore & trigger credentials" section: it **warns** when the restore token is missing (restore commands disabled) and reports whether the inbound trigger runs in single-secret mode (backup code doubling as trigger secret) or with a dedicated secret.
+    -   The README documents the restore commands and a **"Bootstrapping a fresh deployment"** guide: deploy → carry over the **original** `NOTIFIER_BACKUP_PASSWORD` (archives are encrypted with it — a freshly generated password cannot decrypt them) + set the restore token → restore both backups (`--force` on production) — and explicitly explains that backing up a freshly migrated, near-empty database is *expected* to be rejected by the control plane's "Backup too small" threshold, so restore comes first and backups start once there is data.
+    -   The installer is safe to re-run: `--force` now prefills the current values and asks to **keep the existing backup password** (default yes), so adding a restore token can no longer accidentally rotate the password that encrypts every already-uploaded archive. The restore token prompt is non-echoing (`password()`, not `text()`) and rejects the backup code/password pasted by mistake — and `notifier:check` warns instead of passing when the restore token equals the backup code, so a mixed-up credential cannot hide behind a green check.
+
 ## [1.7.3] - 2026-08-05
 
 ### Security
