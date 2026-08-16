@@ -408,7 +408,7 @@ final class VendorExport
                 $this->warnings[] = "Expected 3 STATUS_* constants in the trait, removed {$count}.";
             }
 
-            $stripped = str_replace('use Illuminate\Console\Command;', "use Devuni\Notifier\Interfaces\ReportStatusInterface;\nuse Illuminate\Console\Command;", $stripped);
+            $stripped = $this->addImport($stripped, 'Devuni\Notifier\Interfaces\ReportStatusInterface');
 
             return str_replace('self::STATUS_*', 'ReportStatusInterface::STATUS_*', $stripped);
         }
@@ -425,12 +425,12 @@ final class VendorExport
             ) ?? $contents;
 
             if ($count === 1) {
-                $contents = preg_replace(
-                    '/^use Devuni\\\\Notifier\\\\/m',
-                    "use Devuni\\Notifier\\Interfaces\\ReportStatusInterface;\nuse Devuni\\Notifier\\",
-                    $contents,
-                    1
-                ) ?? $contents;
+                // addImport places the statement alphabetically. Inserting before
+                // the first Devuni import (the previous approach) left unsorted
+                // imports in commands whose earliest import sorts before
+                // Interfaces\ReportStatusInterface, and a client's pint gate with
+                // ordered_imports then fails on generated files.
+                $contents = $this->addImport($contents, 'Devuni\Notifier\Interfaces\ReportStatusInterface');
             } else {
                 $this->warnings[] = "Could not add `implements ReportStatusInterface` to {$relative}.";
             }
