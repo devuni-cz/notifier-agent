@@ -36,6 +36,24 @@ php artisan notifier:check     # verify setup (env, DB, 7z, mysqldump, URL)
 
 **Requirements:** PHP 8.4+, Laravel `^12.55` or `^13.14`, the right dump tool for your DB (`mysqldump` / `mariadb-dump` for MySQL & MariaDB, `pg_dump` or `ysql_dump` for PostgreSQL & YugabyteDB), and `p7zip-full` (recommended) or PHP `zip` extension.
 
+### Legacy sites (Laravel 8-11)
+
+The package targets PHP 8.4+ and Laravel 12-13 and stays there. Older client sites get a
+**vendored copy** instead - the source is exported into the project itself and loaded through
+PSR-4, with no composer dependency:
+
+```bash
+php scripts/vendor-export.php --to=/path/to/site --php=8.1 --laravel=9
+```
+
+The exporter applies exactly the transformations that target needs - `mb_*` functions below
+PHP 8.4, trait constants below 8.2, `Rule::enum` / `validated($key)` / `connectTimeout()` /
+keyed `json()` below Laravel 9 - drops `notifier:install` (it needs `laravel/prompts`), stamps
+the version into `NotifierServiceProvider::VERSION`, then lints the result and refuses to ship
+anything it could not rewrite. Re-run it after each release; the copy is a build artifact, not
+something to edit by hand. PHP 8.0 is not supported - backed enums and readonly promotion would
+have to be rewritten, so those sites keep their existing hand-made copy until the box moves.
+
 ### Migrating from `devuni/notifier-package`
 
 This package is the successor of [`devuni/notifier-package`](https://github.com/devuni-cz/notifier-package) - same namespace (`Devuni\Notifier\`), same env vars (`NOTIFIER_*`), same artisan commands, same `config/notifier.php`, same route prefix. The swap is one step:
