@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+-   **Guzzle 8 is now allowed** (`guzzlehttp/guzzle: ^7.15.2 || ^8.3.1`). The agent talks HTTP only through Laravel's `Http` client, and Laravel 13 accepts Guzzle `^7.8.2 || ^8.0`, so Laravel 13 installs can move to Guzzle 8 while Laravel 12 installs keep resolving 7.x. The 7.x floor (CVE fixes from 1.7.3) is unchanged.
+-   **The `nesbot/carbon` conflict is narrowed from `>=3.12.0` to exactly `3.12.0`.** Only carbon 3.12.0 declares `Carbon::plus(..., ?bool $overflow)`, which is fatal against Laravel 12's `Illuminate\Support\Carbon::plus()` override; 3.12.1 dropped that method again and every release up to 3.15.1 boots cleanly on Laravel 12.70. Installs were held on carbon 3.11.x for no reason and now get current carbon fixes.
+-   **Dev tooling bumped to the latest releases:** Pest 5 / PHPUnit 13 on Laravel 13 (`pestphp/pest: ^4.7.8 || ^5.3.4` - Pest 5 requires Laravel 13 and Symfony 8, so the Laravel 12 CI rows keep Pest 4), plus Larastan 3.13, Pint 1.32, Rector 2.8, Testbench 11.3, Filament support 5.11, Mockery 1.6.15 and Collision 8.9.5.
+-   **PHPStan now analyses the package with its own service provider booted** (new `testbench.yaml`, excluded from the dist archive). Without it Larastan did not know the `notifier::` view namespace and reported the Filament banner's view name as an invalid `view-string`.
 -   **README no longer recommends scheduling the backup commands on every site.** The "Scheduled backups (recommended)" section presented client-side cron as the default, but Devuni-managed sites are backed up by the **control plane's** scheduled services (frequency configured per repository in the server's repository settings, delivered through the inbound HTTP trigger) — following the old advice would run every backup twice. The section now describes both modes explicitly: control-plane-managed (default, nothing to schedule locally) and self-scheduled (standalone or legacy projects only), with the heartbeat cron required in both.
 
 ## [1.8.0] - 2026-08-05

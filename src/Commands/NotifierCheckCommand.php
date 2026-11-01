@@ -59,7 +59,7 @@ final class NotifierCheckCommand extends Command
 
         $missing = $configService->checkEnvironment();
 
-        if (empty($missing)) {
+        if ($missing === []) {
             $this->passLine('All required environment variables are configured');
             $this->showConfiguredValues();
             $this->record('Environment variables', self::STATUS_PASS);
@@ -187,6 +187,16 @@ final class NotifierCheckCommand extends Command
     }
 
     /**
+     * The dumper bound in the container, typed by its contract: the service
+     * provider binds a LazyDatabaseDumper, but the host app (or a test) may
+     * rebind the interface to any other implementation.
+     */
+    private function boundDumper(): DatabaseDumperInterface
+    {
+        return app(DatabaseDumperInterface::class);
+    }
+
+    /**
      * Check if the right dump binary is available for the configured driver.
      */
     private function checkDatabaseDumpTool(): void
@@ -199,7 +209,7 @@ final class NotifierCheckCommand extends Command
         $this->detail('Connection', "<fg=cyan>{$connection}</> <fg=gray>(driver: {$driver})</>");
 
         try {
-            $dumper = app(DatabaseDumperInterface::class);
+            $dumper = $this->boundDumper();
 
             // Unwrap LazyDatabaseDumper to expose the concrete implementation
             if ($dumper instanceof LazyDatabaseDumper) {

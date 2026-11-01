@@ -20,10 +20,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The nesbot/carbon <3.12 guard (Laravel 12.62's Carbon::plus() override is
-          # fatal with carbon 3.12+) lives in composer.json's "conflict" section, so
-          # every row - and every client install - resolves a compatible carbon.
-          # TODO: drop the conflict once Laravel 12 ships a fix.
+          # The nesbot/carbon 3.12.0 guard (Laravel 12.62+'s Carbon::plus() override is
+          # fatal with that one release; carbon 3.12.1 dropped the conflicting method)
+          # lives in composer.json's "conflict" section, so every row - and every
+          # client install - resolves a compatible carbon.
+          # The L12 rows resolve Pest 4 / PHPUnit 12 (Pest 5 needs Laravel 13 and
+          # Symfony 8), hence the "^4 || ^5" Pest constraints in composer.json.
           - php: '8.4'
             laravel: '12.*'
             testbench: '^10.0'

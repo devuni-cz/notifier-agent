@@ -1,0 +1,5 @@
+# Read by Larastan when it boots a Testbench app to analyse this package: without
+# the provider the `notifier::` view namespace is unknown and every view-string
+# argument is reported as invalid. The Pest TestCase registers providers itself.
+providers:
+  - Devuni\Notifier\NotifierServiceProvider
