@@ -14,13 +14,13 @@ use Illuminate\Support\Facades\File;
 use RuntimeException;
 use Throwable;
 
-final class NotifierDatabaseService
+final readonly class NotifierDatabaseService
 {
     public function __construct(
-        private readonly ChunkedUploadService $uploadService,
-        private readonly ZipCreatorInterface $zipCreator,
-        private readonly DatabaseDumperInterface $databaseDumper,
-        private readonly NotifierLoggerService $notifierLogger,
+        private ChunkedUploadService $uploadService,
+        private ZipCreatorInterface $zipCreator,
+        private DatabaseDumperInterface $databaseDumper,
+        private NotifierLoggerService $notifierLogger,
     ) {}
 
     public function createDatabaseBackup(): string

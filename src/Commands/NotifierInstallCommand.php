@@ -23,13 +23,13 @@ final class NotifierInstallCommand extends Command
      * database + storage archive, so a weak value is crackable offline once
      * an attacker has the archive.
      */
-    private const MIN_BACKUP_PASSWORD_LENGTH = 16;
+    private const int MIN_BACKUP_PASSWORD_LENGTH = 16;
 
     /**
      * Minimum number of distinct characters - rejects low-entropy values such
      * as "aaaaaaaaaaaaaaaa" or "1234123412341234" that pass a length-only check.
      */
-    private const MIN_BACKUP_PASSWORD_UNIQUE_CHARS = 6;
+    private const int MIN_BACKUP_PASSWORD_UNIQUE_CHARS = 6;
 
     protected $signature = 'notifier:install {--force : Overwrites existing environment variables}';
 
@@ -304,7 +304,7 @@ final class NotifierInstallCommand extends Command
         }
         $envContent = file_get_contents($envPath);
         $requiredKeys = ['NOTIFIER_BACKUP_CODE', 'NOTIFIER_URL', 'NOTIFIER_BACKUP_PASSWORD'];
-        $alreadySet = collect($requiredKeys)->every(function ($key) use ($envContent) {
+        $alreadySet = collect($requiredKeys)->every(function ($key) use ($envContent): bool {
             if (preg_match("/^{$key}=(.*)$/m", $envContent, $matches)) {
                 $value = mb_trim($matches[1], '"');
 

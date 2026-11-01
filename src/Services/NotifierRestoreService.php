@@ -21,13 +21,13 @@ use RuntimeException;
  * This service only fetches and applies. Confirmation, production guards and
  * safety snapshots are the caller's (command's) responsibility.
  */
-final class NotifierRestoreService
+final readonly class NotifierRestoreService
 {
     public function __construct(
-        private readonly NotifierApiClient $api,
-        private readonly NotifierLoggerService $notifierLogger,
-        private readonly ZipExtractorInterface $zipExtractor,
-        private readonly DatabaseImporterInterface $databaseImporter,
+        private NotifierApiClient $api,
+        private NotifierLoggerService $notifierLogger,
+        private ZipExtractorInterface $zipExtractor,
+        private DatabaseImporterInterface $databaseImporter,
     ) {}
 
     /**
@@ -399,7 +399,7 @@ final class NotifierRestoreService
             throw new RuntimeException('Refusing to restore: backup contains a server-override file ("'.$relativePath.'").');
         }
 
-        $extension = mb_strtolower((string) pathinfo($basename, PATHINFO_EXTENSION));
+        $extension = mb_strtolower(pathinfo($basename, PATHINFO_EXTENSION));
 
         $executable = [
             'php', 'php3', 'php4', 'php5', 'php6', 'php7', 'php8', 'phps', 'pht', 'phtm', 'phtml', 'phar',

@@ -94,7 +94,7 @@ trait DisplayHelperTrait
     {
         try {
             return InstalledVersions::getPrettyVersion('devuni/notifier-agent') ?? 'custom';
-        } catch (OutOfBoundsException $e) {
+        } catch (OutOfBoundsException) {
             return 'unknown';
         }
     }

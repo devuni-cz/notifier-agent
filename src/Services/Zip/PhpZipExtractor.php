@@ -11,12 +11,12 @@ use Illuminate\Support\Facades\File;
 use RuntimeException;
 use ZipArchive;
 
-final class PhpZipExtractor implements ZipExtractorInterface
+final readonly class PhpZipExtractor implements ZipExtractorInterface
 {
     use GuardsExtractionSize;
 
     public function __construct(
-        private readonly NotifierLoggerService $notifierLogger,
+        private NotifierLoggerService $notifierLogger,
     ) {}
 
     public static function isAvailable(): bool

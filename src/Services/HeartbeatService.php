@@ -23,21 +23,21 @@ use Throwable;
  * safe and never throws, but sending it LOGS + THROWS on failure so the operator
  * or host scheduler sees that the control plane stopped hearing from this site.
  */
-final class HeartbeatService
+final readonly class HeartbeatService
 {
     /**
      * Cache key holding the ISO8601 timestamp of the last successful database backup.
      */
-    public const LAST_DATABASE_BACKUP_KEY = 'notifier.last_database_backup_at';
+    public const string LAST_DATABASE_BACKUP_KEY = 'notifier.last_database_backup_at';
 
     /**
      * Cache key holding the ISO8601 timestamp of the last successful storage backup.
      */
-    public const LAST_STORAGE_BACKUP_KEY = 'notifier.last_storage_backup_at';
+    public const string LAST_STORAGE_BACKUP_KEY = 'notifier.last_storage_backup_at';
 
     public function __construct(
-        private readonly NotifierApiClient $api,
-        private readonly NotifierLoggerService $notifierLogger,
+        private NotifierApiClient $api,
+        private NotifierLoggerService $notifierLogger,
     ) {}
 
     /**

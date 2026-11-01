@@ -12,12 +12,12 @@ use Illuminate\Support\Facades\File;
 use RuntimeException;
 use Throwable;
 
-final class NotifierStorageService
+final readonly class NotifierStorageService
 {
     public function __construct(
-        private readonly ChunkedUploadService $uploadService,
-        private readonly ZipCreatorInterface $zipCreator,
-        private readonly NotifierLoggerService $notifierLogger,
+        private ChunkedUploadService $uploadService,
+        private ZipCreatorInterface $zipCreator,
+        private NotifierLoggerService $notifierLogger,
     ) {}
 
     public function createStorageBackup(): string

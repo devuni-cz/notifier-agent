@@ -15,12 +15,12 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Throwable;
 
-final class NotifierSendBackupController
+final readonly class NotifierSendBackupController
 {
     public function __construct(
-        private readonly NotifierDatabaseService $databaseService,
-        private readonly NotifierStorageService $storageService,
-        private readonly NotifierLoggerService $notifierLogger,
+        private NotifierDatabaseService $databaseService,
+        private NotifierStorageService $storageService,
+        private NotifierLoggerService $notifierLogger,
     ) {}
 
     public function __invoke(BackupRequest $request): JsonResponse

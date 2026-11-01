@@ -10,14 +10,14 @@ use RuntimeException;
 use Symfony\Component\Process\Process;
 use Throwable;
 
-final class PostgresImporter implements DatabaseImporterInterface
+final readonly class PostgresImporter implements DatabaseImporterInterface
 {
     /**
      * @param  string  $connection  Laravel database connection name (e.g. "pgsql").
      */
     public function __construct(
-        private readonly string $connection,
-        private readonly NotifierLoggerService $notifierLogger,
+        private string $connection,
+        private NotifierLoggerService $notifierLogger,
     ) {}
 
     public static function isAvailable(): bool

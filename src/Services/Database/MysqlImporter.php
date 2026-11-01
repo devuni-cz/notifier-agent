@@ -9,14 +9,14 @@ use Devuni\Notifier\Services\NotifierLoggerService;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
-final class MysqlImporter implements DatabaseImporterInterface
+final readonly class MysqlImporter implements DatabaseImporterInterface
 {
     /**
      * @param  string  $connection  Laravel database connection name (e.g. "mysql").
      */
     public function __construct(
-        private readonly string $connection,
-        private readonly NotifierLoggerService $notifierLogger,
+        private string $connection,
+        private NotifierLoggerService $notifierLogger,
     ) {}
 
     public static function isAvailable(): bool

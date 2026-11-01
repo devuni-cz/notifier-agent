@@ -10,14 +10,14 @@ use RuntimeException;
 use Symfony\Component\Process\Process;
 use Throwable;
 
-final class PostgresDumper implements DatabaseDumperInterface
+final readonly class PostgresDumper implements DatabaseDumperInterface
 {
     /**
      * @param  string  $connection  Laravel database connection name (e.g. "pgsql").
      */
     public function __construct(
-        private readonly string $connection,
-        private readonly NotifierLoggerService $notifierLogger,
+        private string $connection,
+        private NotifierLoggerService $notifierLogger,
     ) {}
 
     /**

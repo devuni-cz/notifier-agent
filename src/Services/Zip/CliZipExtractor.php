@@ -13,12 +13,12 @@ use RecursiveIteratorIterator;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
-final class CliZipExtractor implements ZipExtractorInterface
+final readonly class CliZipExtractor implements ZipExtractorInterface
 {
     use GuardsExtractionSize;
 
     public function __construct(
-        private readonly NotifierLoggerService $notifierLogger,
+        private NotifierLoggerService $notifierLogger,
     ) {}
 
     public static function isAvailable(): bool
