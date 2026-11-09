@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 -   **PostgreSQL restores no longer refuse dumps made by current `pg_dump`.** Versions 13.22, 14.19, 15.14, 16.10, 17.6 and newer write `\restrict <key>` and `\unrestrict <key>` lines into plain dumps, which the restore treated as tampering. Exactly those two lines, with an alphanumeric key and nothing after it, are now allowed.
 -   **`notifier:database-restore --dry-run` now runs the import's dump checks**, so it can no longer report success for a dump the real import would refuse.
+-   **PostgreSQL restores no longer refuse genuine dumps whose stored text only looks like a client directive.** The dump inspection also runs in constant memory now.
 
 ## [1.8.0] - 2026-08-05
 
