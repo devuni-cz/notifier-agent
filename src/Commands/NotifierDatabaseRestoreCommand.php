@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Devuni\Notifier\Commands;
 
 use Devuni\Notifier\Enums\BackupTypeEnum;
+use Devuni\Notifier\Exceptions\TransactionalImportFailedException;
 use Devuni\Notifier\Interfaces\DatabaseDumperInterface;
 use Devuni\Notifier\Services\NotifierRestoreService;
 use Devuni\Notifier\Traits\DisplayHelperTrait;
@@ -64,11 +65,12 @@ final class NotifierDatabaseRestoreCommand extends Command
             $extracted = $restore->extract($archivePath, $workDirectory.'/extracted');
             $this->passLine('Archive extracted');
 
-            if ($this->option('dry-run')) {
-                $this->section('Inspect');
-                $restore->inspectDatabase($extracted);
-                $this->passLine('Dump passed the checks the import runs');
+            // Before the snapshot: a refused dump must not get as far as a rollback.
+            $this->section('Inspect');
+            $restore->inspectDatabase($extracted);
+            $this->passLine('Dump passed the checks the import runs');
 
+            if ($this->option('dry-run')) {
                 $this->warnLine('Dry run - the database was NOT modified.');
 
                 return self::SUCCESS;
@@ -86,6 +88,10 @@ final class NotifierDatabaseRestoreCommand extends Command
 
             try {
                 $restore->importDatabase($extracted);
+            } catch (TransactionalImportFailedException $importError) {
+                $this->reportTransactionalFailure($importError, $snapshot);
+
+                throw $importError;
             } catch (Throwable $importError) {
                 // MySQL cannot roll a full-schema restore back (every DDL statement
                 // implicitly commits), so a mid-import failure leaves the database
@@ -205,6 +211,31 @@ final class NotifierDatabaseRestoreCommand extends Command
         @chmod($path, 0600);
 
         return $path;
+    }
+
+    /**
+     * Report a failed transactional import without replaying anything over it. The
+     * snapshot is deleted only when the database is proven unchanged; otherwise it
+     * may be the only copy of the pre-restore data, so it stays for the operator.
+     */
+    private function reportTransactionalFailure(TransactionalImportFailedException $error, ?string $snapshot): void
+    {
+        if ($error->databaseUnchanged) {
+            if ($snapshot !== null) {
+                File::delete($snapshot);
+            }
+
+            $this->warnLine('Import failed - the transaction was rolled back, so the database is unchanged.');
+
+            return;
+        }
+
+        $this->warnLine(
+            'Import failed and the state of the database could not be confirmed, so nothing was replayed over it. '
+            .($snapshot !== null
+                ? 'Pre-restore snapshot kept at: '.$snapshot.' (restore it manually if needed).'
+                : 'No snapshot was taken (--no-snapshot).')
+        );
     }
 
     /**

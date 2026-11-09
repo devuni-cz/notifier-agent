@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Devuni\Notifier\Services\Database;
 
+use Devuni\Notifier\Exceptions\TransactionalImportFailedException;
 use Devuni\Notifier\Interfaces\DatabaseImporterInterface;
 use Devuni\Notifier\Services\NotifierLoggerService;
 use RuntimeException;
+use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Symfony\Component\Process\Process;
 use Throwable;
 
@@ -57,12 +59,23 @@ final class PostgresImporter implements DatabaseImporterInterface
 
         $binary = $this->resolveBinary();
 
+        // Only psql is known to roll DDL back with the transaction, so only psql
+        // gets the comparison that can prove a failed import changed nothing.
+        $schemaBefore = pathinfo($binary, PATHINFO_FILENAME) === 'psql'
+            ? $this->schemaIdentity($binary, $config, (string) $database)
+            : null;
+
         $process = new Process($this->buildCommand($binary, $config, (string) $database, $sqlPath));
         // Restores of large dumps legitimately run for a long time.
         $process->setTimeout(null);
         // Password via env var (not argv) to keep it out of /proc/*/cmdline and `ps` output.
         $process->setEnv(['PGPASSWORD' => (string) ($config['password'] ?? '')]);
-        $process->run();
+
+        try {
+            $process->run();
+        } catch (ProcessSignaledException) {
+            // Killed mid-import: reported below like any other failed run.
+        }
 
         if (! $process->isSuccessful()) {
             $logger->error('❌ '.$binary.' import failed', [
@@ -70,7 +83,10 @@ final class PostgresImporter implements DatabaseImporterInterface
                 'error' => $process->getErrorOutput(),
             ]);
 
-            throw new RuntimeException('Database restore failed: '.$process->getErrorOutput());
+            throw new TransactionalImportFailedException(
+                'Database restore failed: '.$process->getErrorOutput(),
+                $schemaBefore !== null && $schemaBefore === $this->schemaIdentity($binary, $config, (string) $database),
+            );
         }
     }
 
@@ -143,6 +159,42 @@ final class PostgresImporter implements DatabaseImporterInterface
         }
 
         return $process->isSuccessful();
+    }
+
+    /**
+     * The OID of the schema the import drops first. A rolled-back import leaves it
+     * as it was. --single-transaction alone cannot promise that: a plain dump with
+     * large objects carries its own COMMIT, and everything before it stays applied,
+     * the schema reset included, which recreates the schema under a new OID.
+     *
+     * @param  array<string, mixed>  $config
+     * @return string|null Null when the server could not answer.
+     */
+    private function schemaIdentity(string $binary, array $config, string $database): ?string
+    {
+        $schema = str_replace("'", "''", (string) config('notifier.postgres_schema', 'public'));
+
+        $process = new Process([
+            $binary,
+            '--no-psqlrc',
+            '--no-password',
+            '--tuples-only',
+            '--no-align',
+            '--username='.($config['username'] ?? ''),
+            '--port='.($config['port'] ?? 5432),
+            '--host='.($config['host'] ?? '127.0.0.1'),
+            '--dbname='.$database,
+            "--command=SELECT COALESCE(to_regnamespace('{$schema}')::oid::text, 'absent');",
+        ]);
+        $process->setEnv(['PGPASSWORD' => (string) ($config['password'] ?? '')]);
+
+        try {
+            $process->run();
+        } catch (Throwable) {
+            return null;
+        }
+
+        return $process->isSuccessful() ? mb_trim($process->getOutput()) : null;
     }
 
     /**

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Devuni\Notifier\Exceptions\TransactionalImportFailedException;
 use Devuni\Notifier\Services\Database\MysqlImporter;
 use Devuni\Notifier\Services\Database\PostgresImporter;
 use Devuni\Notifier\Services\NotifierLoggerService;
@@ -50,3 +51,22 @@ it('refuses a dump with a client directive before reaching the client', function
     'psql' => [PostgresImporter::class, '\! id'],
     'mysql' => [MysqlImporter::class, 'system id'],
 ]);
+
+it('claims nothing about the database when the client is not psql', function () {
+    // ysqlsh's DDL transactionality is unverified. PHP stands in as a client that
+    // exists, is not psql and rejects psql's options, so the import fails.
+    config()->set('notifier.postgres_restore_binary', PHP_BINARY);
+    config()->set('database.connections.stand_in', ['driver' => 'pgsql', 'database' => 'app']);
+
+    $path = tempnam(sys_get_temp_dir(), 'importer_');
+    file_put_contents($path, "SELECT 1;\n");
+
+    try {
+        (new PostgresImporter('stand_in', new NotifierLoggerService))->import($path);
+        $this->fail('The import should have failed.');
+    } catch (TransactionalImportFailedException $e) {
+        expect($e->databaseUnchanged)->toBeFalse();
+    } finally {
+        @unlink($path);
+    }
+});
