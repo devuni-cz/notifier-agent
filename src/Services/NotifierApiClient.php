@@ -255,7 +255,9 @@ final class NotifierApiClient
      */
     private function sanitizeMessage(string $value): string
     {
-        $clean = (string) preg_replace('/[\x00-\x1F\x7F-\x9F]+/u', ' ', $value);
+        // Scrubbed first because a /u pattern returns null on invalid UTF-8, such
+        // as a body that was cut off in the middle of a character.
+        $clean = (string) preg_replace('/[\x00-\x1F\x7F-\x9F]+/u', ' ', mb_scrub($value, 'UTF-8'));
 
         return mb_substr($clean, 0, 500);
     }

@@ -183,6 +183,15 @@ describe('NotifierApiClient::downloadTo', function () {
         expect(mb_strlen($response->body(), '8bit'))->toBe(65536);
     });
 
+    it('still reports an error body cut off in the middle of a character', function () {
+        // The two-byte character starts at the last byte that is kept.
+        Http::fake(['*' => Http::response(str_repeat('x', 65535)."\u{E9}".str_repeat('y', 100), 500)]);
+
+        $response = apiClient()->downloadTo('/backups/1/download', $this->destination, 'restore-token');
+
+        expect(apiClient()->formatError($response))->toBe(str_repeat('x', 500));
+    });
+
     it('defaults the limit to the largest backup the control plane accepts', function () {
         expect(config('notifier.restore_max_download_bytes'))->toBe(20 * 1024 * 1024 * 1024);
     });
