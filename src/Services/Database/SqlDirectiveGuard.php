@@ -16,17 +16,28 @@ use RuntimeException;
  * NEVER emits these, so their presence means the archive was tampered with and the
  * restore must abort before a single byte reaches the client.
  *
+ * The one exception is the `\restrict <key>` / `\unrestrict <key>` pair that pg_dump
+ * 13.22, 14.19, 15.14, 16.10, 17.6 and newer write around a plain dump. They only
+ * switch psql's own metacommand lockdown on and off, so they are allowed, but only
+ * as a whole line of exactly the directive and an alphanumeric key.
+ *
  * The AES-256 archive password (enforced by the extractors) is the primary gate;
  * this is defense-in-depth for the case where an attacker also knows the password.
  */
 final class SqlDirectiveGuard
 {
     /**
+     * Matches the whole line, so nothing but the key can follow the directive.
+     */
+    private const string POSTGRES_RESTRICT_LINE = '/^\s*\\\\(?:un)?restrict [0-9A-Za-z]{1,128}\s*$/D';
+
+    /**
      * A plain pg_dump interleaves SQL statements with `COPY ... FROM stdin;` data
      * blocks. Inside a block every `\`-led line is escaped table data (`\t`, `\N`,
      * `\\`, ...) and must be ignored; the lone `\.` line ends the block. OUTSIDE a
-     * block a genuine dump has no `\`-led lines at all, so any backslash there is a
-     * psql metacommand (`\!`, `\i`, `\o`, `\copy`, `\gexec`, ...).
+     * block the only `\`-led lines of a genuine dump are `\restrict` / `\unrestrict`,
+     * so any other backslash there is a psql metacommand (`\!`, `\i`, `\o`, `\copy`,
+     * `\gexec`, ...).
      *
      * @throws RuntimeException When a psql metacommand is found outside a COPY block.
      */
@@ -49,7 +60,7 @@ final class SqlDirectiveGuard
                     continue;
                 }
 
-                if (preg_match('/^\s*\\\\/', $line) === 1) {
+                if (preg_match('/^\s*\\\\/', $line) === 1 && preg_match(self::POSTGRES_RESTRICT_LINE, $line) !== 1) {
                     self::reject('psql', $lineNumber);
                 }
 

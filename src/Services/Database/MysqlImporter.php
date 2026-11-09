@@ -27,6 +27,11 @@ final class MysqlImporter implements DatabaseImporterInterface
         return $process->isSuccessful();
     }
 
+    public function inspect(string $sqlPath): void
+    {
+        SqlDirectiveGuard::assertMysqlSafe($sqlPath);
+    }
+
     public function import(string $sqlPath): void
     {
         $logger = $this->notifierLogger->get();
@@ -38,7 +43,7 @@ final class MysqlImporter implements DatabaseImporterInterface
         // Refuse a dump carrying mysql client directives (\!, system, source)
         // before piping it in - a tampered archive could otherwise run a shell
         // command as the app user.
-        SqlDirectiveGuard::assertMysqlSafe($sqlPath);
+        $this->inspect($sqlPath);
 
         $config = config("database.connections.{$this->connection}");
 

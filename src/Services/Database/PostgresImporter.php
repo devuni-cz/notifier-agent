@@ -25,6 +25,11 @@ final class PostgresImporter implements DatabaseImporterInterface
         return self::binaryAvailable('ysqlsh') || self::binaryAvailable('psql');
     }
 
+    public function inspect(string $sqlPath): void
+    {
+        SqlDirectiveGuard::assertPostgresSafe($sqlPath);
+    }
+
     public function import(string $sqlPath): void
     {
         $logger = $this->notifierLogger->get();
@@ -36,7 +41,7 @@ final class PostgresImporter implements DatabaseImporterInterface
         // Refuse a dump carrying psql metacommands (\!, \copy, \i, ...) before a
         // single byte reaches the client - a tampered archive could otherwise run
         // a shell command as the app user via `\!`.
-        SqlDirectiveGuard::assertPostgresSafe($sqlPath);
+        $this->inspect($sqlPath);
 
         $config = config("database.connections.{$this->connection}");
 

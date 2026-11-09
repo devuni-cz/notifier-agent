@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 -   **README no longer recommends scheduling the backup commands on every site.** The "Scheduled backups (recommended)" section presented client-side cron as the default, but Devuni-managed sites are backed up by the **control plane's** scheduled services (frequency configured per repository in the server's repository settings, delivered through the inbound HTTP trigger) — following the old advice would run every backup twice. The section now describes both modes explicitly: control-plane-managed (default, nothing to schedule locally) and self-scheduled (standalone or legacy projects only), with the heartbeat cron required in both.
 
+### Fixed
+
+-   **PostgreSQL restores no longer refuse dumps made by current `pg_dump`.** Versions 13.22, 14.19, 15.14, 16.10, 17.6 and newer write `\restrict <key>` and `\unrestrict <key>` lines into plain dumps, which the restore treated as tampering. Exactly those two lines, with an alphanumeric key and nothing after it, are now allowed.
+-   **`notifier:database-restore --dry-run` now runs the import's dump checks**, so it can no longer report success for a dump the real import would refuse.
+
 ## [1.8.0] - 2026-08-05
 
 ### Added

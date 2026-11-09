@@ -65,6 +65,10 @@ final class NotifierDatabaseRestoreCommand extends Command
             $this->passLine('Archive extracted');
 
             if ($this->option('dry-run')) {
+                $this->section('Inspect');
+                $restore->inspectDatabase($extracted);
+                $this->passLine('Dump passed the checks the import runs');
+
                 $this->warnLine('Dry run - the database was NOT modified.');
 
                 return self::SUCCESS;
