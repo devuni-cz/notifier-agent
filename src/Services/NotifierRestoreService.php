@@ -334,26 +334,6 @@ final readonly class NotifierRestoreService
     }
 
     /**
-     * The one .sql dump a database backup extracts to.
-     *
-     * @throws RuntimeException When the directory does not hold exactly one dump.
-     */
-    private function singleDump(string $extractedDirectory): string
-    {
-        $dumps = glob($extractedDirectory.'/*.sql') ?: [];
-
-        if ($dumps === []) {
-            throw new RuntimeException('No .sql dump found in the extracted archive.');
-        }
-
-        if (count($dumps) > 1) {
-            throw new RuntimeException('Expected exactly one .sql dump, found '.count($dumps).'.');
-        }
-
-        return $dumps[0];
-    }
-
-    /**
      * Move an approved but unauthenticated storage restore into a private
      * directory instead of the web-served one. Nothing is published until a
      * person has looked at it and copied what is needed.
@@ -391,6 +371,26 @@ final readonly class NotifierRestoreService
         foreach ($this->storageEntries($extractedDirectory) as $file) {
             $this->assertSafeStorageEntry($file->getRelativePathname());
         }
+    }
+
+    /**
+     * The one .sql dump a database backup extracts to.
+     *
+     * @throws RuntimeException When the directory does not hold exactly one dump.
+     */
+    private function singleDump(string $extractedDirectory): string
+    {
+        $dumps = glob($extractedDirectory.'/*.sql') ?: [];
+
+        if ($dumps === []) {
+            throw new RuntimeException('No .sql dump found in the extracted archive.');
+        }
+
+        if (count($dumps) > 1) {
+            throw new RuntimeException('Expected exactly one .sql dump, found '.count($dumps).'.');
+        }
+
+        return $dumps[0];
     }
 
     /**

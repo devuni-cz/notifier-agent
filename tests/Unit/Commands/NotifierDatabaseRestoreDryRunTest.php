@@ -15,8 +15,12 @@ use Illuminate\Support\Facades\Http;
 |--------------------------------------------------------------------------
 */
 
-/** Serve one bare .sql backup and point the restore at a connection of $driver. */
-function serveDumpForDriver(string $dump, string $driver): void
+/**
+ * Serve one bare .sql backup and point the restore at a connection of $driver.
+ *
+ * @return array{'--dry-run': true, '--id': int, '--accept-unverified': string} A bare dump has no seal, so a restore needs this approval.
+ */
+function serveDumpForDriver(string $dump, string $driver): array
 {
     Config::set('notifier.database_connection', 'restore_target');
     Config::set('database.connections.restore_target', ['driver' => $driver, 'database' => 'app']);
@@ -35,6 +39,8 @@ function serveDumpForDriver(string $dump, string $driver): void
             'created_at' => null,
         ]]], 200),
     ]);
+
+    return ['--dry-run' => true, '--id' => 1, '--accept-unverified' => hash('sha256', $padded)];
 }
 
 beforeEach(function () {
@@ -51,23 +57,23 @@ afterEach(function () {
 });
 
 it('passes a dry run of a dump framed by the pg_dump restrict lines', function () {
-    serveDumpForDriver("\\restrict abc123\nSELECT 1;\n\\unrestrict abc123\n", 'pgsql');
+    $options = serveDumpForDriver("\\restrict abc123\nSELECT 1;\n\\unrestrict abc123\n", 'pgsql');
 
-    $this->artisan('notifier:database-restore', ['--dry-run' => true])
+    $this->artisan('notifier:database-restore', $options)
         ->expectsOutputToContain('Dry run - the database was NOT modified.')
         ->assertExitCode(0);
 });
 
 it('fails a dry run of a dump the real import would refuse', function (string $dump, string $driver) {
-    serveDumpForDriver($dump, $driver);
+    $options = serveDumpForDriver($dump, $driver);
 
-    $this->artisan('notifier:database-restore', ['--dry-run' => true])
+    $this->artisan('notifier:database-restore', $options)
         ->expectsOutputToContain('client directive')
         ->doesntExpectOutputToContain('Dry run - the database was NOT modified.')
         ->assertExitCode(1);
 
     // The extracted dump is a plaintext database copy - a refusal must not strand it.
-    expect(is_dir(storage_path('app/notifier-restore/1')))->toBeFalse();
+    expect(glob(storage_path('app/notifier-restore/run-*')))->toBe([]);
 })->with([
     'psql directive' => ["SELECT 1;\n\\! id\n", 'pgsql'],
     'mysql directive' => ["SELECT 1;\nsystem id\n", 'mysql'],

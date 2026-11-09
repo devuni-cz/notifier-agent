@@ -83,6 +83,22 @@ function bindFailingRestoreLeaves(?Throwable $importError = null, ?Throwable $in
     return $calls;
 }
 
+/**
+ * A bare dump has no seal, so a restore needs this approval.
+ *
+ * @param  array<string, mixed>  $extra
+ * @return array<string, mixed>
+ */
+function restoreFailureOptions(array $extra = []): array
+{
+    return [
+        ...$extra,
+        '--force' => true,
+        '--id' => 1,
+        '--accept-unverified' => hash('sha256', str_repeat("-- SQL DUMP LINE\n", 20)),
+    ];
+}
+
 /** @return list<string> */
 function restoreFailureSnapshots(): array
 {
@@ -116,7 +132,7 @@ afterEach(function () {
 it('inspects the dump before taking the snapshot', function () {
     $calls = bindFailingRestoreLeaves();
 
-    $this->artisan('notifier:database-restore', ['--force' => true])
+    $this->artisan('notifier:database-restore', restoreFailureOptions())
         ->assertExitCode(0);
 
     expect($calls->getArrayCopy())->toBe(['inspect', 'dump', 'import']);
@@ -125,7 +141,7 @@ it('inspects the dump before taking the snapshot', function () {
 it('takes no snapshot and imports nothing when the dump is refused', function () {
     $calls = bindFailingRestoreLeaves(inspectError: new RuntimeException('dump refused'));
 
-    $this->artisan('notifier:database-restore', ['--force' => true])
+    $this->artisan('notifier:database-restore', restoreFailureOptions())
         ->expectsOutputToContain('dump refused')
         ->doesntExpectOutputToContain('rolling the database back')
         ->assertExitCode(1);
@@ -137,7 +153,7 @@ it('takes no snapshot and imports nothing when the dump is refused', function ()
 it('does not replay the snapshot over a database the transaction left unchanged', function () {
     $calls = bindFailingRestoreLeaves(new TransactionalImportFailedException('import boom', databaseUnchanged: true));
 
-    $this->artisan('notifier:database-restore', ['--force' => true])
+    $this->artisan('notifier:database-restore', restoreFailureOptions())
         ->expectsOutputToContain('the database is unchanged')
         ->doesntExpectOutputToContain('rolling the database back')
         ->assertExitCode(1);
@@ -149,7 +165,7 @@ it('does not replay the snapshot over a database the transaction left unchanged'
 it('keeps the snapshot and replays nothing when the state cannot be confirmed', function () {
     $calls = bindFailingRestoreLeaves(new TransactionalImportFailedException('import boom', databaseUnchanged: false));
 
-    $this->artisan('notifier:database-restore', ['--force' => true])
+    $this->artisan('notifier:database-restore', restoreFailureOptions())
         ->expectsOutputToContain('could not be confirmed')
         ->doesntExpectOutputToContain('the database is unchanged')
         ->doesntExpectOutputToContain('rolling the database back')
@@ -162,7 +178,7 @@ it('keeps the snapshot and replays nothing when the state cannot be confirmed', 
 it('reports the unchanged database with --no-snapshot too', function () {
     bindFailingRestoreLeaves(new TransactionalImportFailedException('import boom', databaseUnchanged: true));
 
-    $this->artisan('notifier:database-restore', ['--force' => true, '--no-snapshot' => true])
+    $this->artisan('notifier:database-restore', restoreFailureOptions(['--no-snapshot' => true]))
         ->expectsOutputToContain('the database is unchanged')
         ->doesntExpectOutputToContain('may be left partially restored')
         ->assertExitCode(1);
@@ -171,7 +187,7 @@ it('reports the unchanged database with --no-snapshot too', function () {
 it('says no snapshot exists when the state cannot be confirmed with --no-snapshot', function () {
     bindFailingRestoreLeaves(new TransactionalImportFailedException('import boom', databaseUnchanged: false));
 
-    $this->artisan('notifier:database-restore', ['--force' => true, '--no-snapshot' => true])
+    $this->artisan('notifier:database-restore', restoreFailureOptions(['--no-snapshot' => true]))
         ->expectsOutputToContain('could not be confirmed, so nothing was replayed over it. No snapshot was taken')
         ->assertExitCode(1);
 

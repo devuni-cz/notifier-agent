@@ -56,7 +56,10 @@ function failedRestoreState(string $database): array
     ];
 }
 
-function serveFailedRestoreDump(string $dump): void
+/**
+ * @return array{'--force': true, '--id': int, '--accept-unverified': string} A bare dump has no seal, so a restore needs this approval.
+ */
+function serveFailedRestoreDump(string $dump): array
 {
     // download() treats anything under 100 bytes as a truncated transfer.
     $body = str_repeat("-- padding\n", 20).$dump;
@@ -72,6 +75,8 @@ function serveFailedRestoreDump(string $dump): void
             'created_at' => null,
         ]]], 200),
     ]);
+
+    return ['--force' => true, '--id' => 1, '--accept-unverified' => hash('sha256', $body)];
 }
 
 /** @return list<string> */
@@ -129,9 +134,9 @@ afterEach(function () {
 
 it('leaves excluded tables and privileges alone when psql rolls the import back', function () {
     $before = failedRestoreState($this->database);
-    serveFailedRestoreDump("CREATE TABLE public.half_done (id int);\nSELECT no_such_function();\n");
+    $options = serveFailedRestoreDump("CREATE TABLE public.half_done (id int);\nSELECT no_such_function();\n");
 
-    $exitCode = Artisan::call('notifier:database-restore', ['--force' => true]);
+    $exitCode = Artisan::call('notifier:database-restore', $options);
 
     expect($exitCode)->toBe(1)
         ->and(Artisan::output())->toContain('the database is unchanged')
@@ -141,9 +146,9 @@ it('leaves excluded tables and privileges alone when psql rolls the import back'
 
 it('leaves excluded tables and privileges alone when the dump is refused', function () {
     $before = failedRestoreState($this->database);
-    serveFailedRestoreDump("SELECT 1;\n\\! echo planted\n");
+    $options = serveFailedRestoreDump("SELECT 1;\n\\! echo planted\n");
 
-    $exitCode = Artisan::call('notifier:database-restore', ['--force' => true]);
+    $exitCode = Artisan::call('notifier:database-restore', $options);
 
     expect($exitCode)->toBe(1)
         ->and(Artisan::output())->toContain('client directive')
@@ -168,9 +173,9 @@ it('keeps the snapshot and replays nothing when a dump committed part of its wor
 
     expect($dump)->toContain("\nCOMMIT;\n");
 
-    serveFailedRestoreDump($dump."SELECT no_such_function();\n");
+    $options = serveFailedRestoreDump($dump."SELECT no_such_function();\n");
 
-    $exitCode = Artisan::call('notifier:database-restore', ['--force' => true]);
+    $exitCode = Artisan::call('notifier:database-restore', $options);
     $output = Artisan::output();
 
     expect($exitCode)->toBe(1)
@@ -191,10 +196,10 @@ it('still restores a genuine dump through psql', function () {
         failedRestoreClient('pg_dump'), '--host=127.0.0.1', '--port='.getenv('NOTIFIER_TEST_PGSQL_PORT'), '--username=postgres',
         '--dbname='.$source, '--file='.$dumpPath, '--no-owner', '--no-privileges', '--no-password',
     ]))->mustRun();
-    serveFailedRestoreDump(File::get($dumpPath));
+    $options = serveFailedRestoreDump(File::get($dumpPath));
     File::delete($dumpPath);
 
-    $exitCode = Artisan::call('notifier:database-restore', ['--force' => true]);
+    $exitCode = Artisan::call('notifier:database-restore', $options);
 
     expect($exitCode)->toBe(0)
         ->and(failedRestorePsql($this->database, 'SELECT name FROM public.users'))->toBe('from-backup')
