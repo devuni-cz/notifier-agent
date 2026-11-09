@@ -280,6 +280,29 @@ describe('command input', function () {
     })->with(['notifier:database-restore', 'notifier:storage-restore']);
 });
 
+describe('download size limit', function () {
+    it('stops a download over the limit and leaves no file behind', function (string $command) {
+        bindFakeRestoreLeaves();
+        Config::set('notifier.restore_max_download_bytes', 100);
+
+        $this->artisan($command, ['--force' => true, ...approvingOptions()])
+            ->expectsOutputToContain('NOTIFIER_RESTORE_MAX_DOWNLOAD_BYTES')
+            ->assertExitCode(1);
+
+        expect(File::allFiles(storage_path('app/notifier-restore')))->toBe([])
+            ->and(glob(storage_path('app/notifier-restore/run-*')))->toBe([]);
+    })->with(['notifier:database-restore', 'notifier:storage-restore']);
+
+    it('restores a download within the limit', function () {
+        bindFakeRestoreLeaves();
+        Config::set('notifier.restore_max_download_bytes', mb_strlen($this->download, '8bit'));
+
+        $this->artisan('notifier:database-restore', ['--force' => true, ...approvingOptions()])
+            ->expectsOutputToContain('Database restored from backup #1')
+            ->assertExitCode(0);
+    });
+});
+
 describe('database restore snapshot rollback', function () {
     it('deletes the snapshot after a successful restore', function () {
         $importer = bindFakeRestoreLeaves(importThrows: false);

@@ -102,6 +102,8 @@ Both commands support `--list`, `--id=`, `--dry-run` (download + verify without 
 
 Upgrade production agents before staging, then run one manual backup and a `--dry-run` of each type per host. `notifier:check` tests sealing with the tools the host really uses, and the heartbeat reports `sealed_backups` for the most recent backup. `NOTIFIER_SEAL_BACKUPS=false` stops new backups from being sealed; it never relaxes a restore.
 
+A restore stops downloading once the archive goes over `NOTIFIER_RESTORE_MAX_DOWNLOAD_BYTES` (default 20 GiB, the largest backup the control plane accepts; `0` turns the limit off), so a download cannot fill the disk.
+
 Restore is authenticated with a **separate** `NOTIFIER_RESTORE_TOKEN` (issued per repository on the control plane) - never the backup code - so leaking the credential that *uploads* backups cannot be used to *download* them. Without the token the restore commands are disabled. `notifier:install` offers to configure it, and `notifier:check` warns when it is missing.
 
 **Bootstrapping a fresh deployment:** deploy → configure `.env` → run both restore commands (with `--force` on production) → done. Three things to know:

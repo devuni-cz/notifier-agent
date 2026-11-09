@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 -   **Backups taken with a password now carry a password-keyed seal in the ZIP comment.** A restore verifies it before extracting anything and prints the authenticated backup type and date. The seal is added after the ZIP is finished, so it works the same for 7z and ZipArchive output, and the archive stays a standard ZIP that older agents and the control plane read unchanged. `NOTIFIER_SEAL_BACKUPS=false` stops new backups from being sealed; it never relaxes a restore.
 -   **`notifier:check` tests sealing** with the ZIP tools the host really uses, and the heartbeat reports `sealed_backups` under `enabled_features` for the most recent backup.
+-   **Backup downloads have a size limit.** `NOTIFIER_RESTORE_MAX_DOWNLOAD_BYTES` (default 20 GiB, the largest backup the control plane accepts; `0` turns it off) caps how many bytes a restore writes to disk while downloading an archive. A larger download stops with a clear error and leaves no partial file behind.
 
 ### Changed
 

@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Devuni\Notifier\Services;
 
+use Devuni\Notifier\Services\Stream\WriteLimit;
+use GuzzleHttp\Psr7\Utils;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -26,6 +29,9 @@ use RuntimeException;
  */
 final class NotifierApiClient
 {
+    /** More than any error message needs; the message itself is cut to 500 characters. */
+    private const int MAX_ERROR_BODY_BYTES = 65536;
+
     /**
      * Correlation id sent as X-Request-Id on every request of one backup run, so
      * the whole run (init -> chunks -> finalize -> poll) can be grepped on both
@@ -98,13 +104,54 @@ final class NotifierApiClient
 
     /**
      * Stream a response body straight to disk. Backups are far too large to
-     * buffer in memory, so the body is sunk to $destination as it arrives.
+     * buffer in memory, so the body is sunk to $destination as it arrives, up to
+     * `restore_max_download_bytes`.
+     *
+     * The file is closed on return, so callers are free to delete it. The returned
+     * response keeps only the start of a failed request's body, for its error
+     * message; a successful response has an empty body.
+     *
+     * @throws RuntimeException When the body is larger than the limit. The partial file is removed.
      */
     public function downloadTo(string $path, string $destination, string $token, int $timeout = 900): Response
     {
-        return $this->pending($timeout, $token)
-            ->sink($destination)
-            ->get($this->url($path));
+        $sink = @fopen($destination, 'w+b');
+
+        if ($sink === false) {
+            throw new RuntimeException('Could not open the download destination: '.$destination);
+        }
+
+        $limit = null;
+        $maxBytes = (int) config('notifier.restore_max_download_bytes', 0);
+
+        try {
+            $limit = $maxBytes > 0 ? WriteLimit::attachTo($sink, $maxBytes) : null;
+
+            $response = $this->pending($timeout, $token)
+                ->sink($sink)
+                ->get($this->url($path));
+
+            $errorBody = $response->successful()
+                ? ''
+                : (string) stream_get_contents($sink, self::MAX_ERROR_BODY_BYTES, 0);
+        } finally {
+            if (is_resource($sink)) {
+                fclose($sink);
+            }
+
+            // In the finally because the refused write reaches this point either
+            // as a transfer error or, with some handlers, as a normal return.
+            if ($limit?->exceeded === true) {
+                File::delete($destination);
+
+                throw new RuntimeException(
+                    'Backup download stopped: the response is larger than the '
+                    .$maxBytes.'-byte limit (NOTIFIER_RESTORE_MAX_DOWNLOAD_BYTES).'
+                );
+            }
+        }
+
+        return new Response($response->toPsrResponse()->withBody(Utils::streamFor($errorBody)));
     }
 
     /**
