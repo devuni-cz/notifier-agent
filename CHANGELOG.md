@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -   **Storage restores no longer skip files inside directories named like version control** (`.git`, `.svn`, `CVS` and so on), which were left out silently.
 -   **`--id` on the restore commands must be a positive whole number.** Anything else used to be read as `0`.
 -   **`CliZipCreatorTest` passes again on PHP 8.4.26 / 8.5.11 and newer.** Those releases made `ZipArchive::getFromName()` read past the last byte so that libzip validates the CRC (php/php-src GH-23240), which exposed the AE-2 mismatch above. The test now checks the right and wrong password through `7z x`, which verifies the AES authentication code, and keeps a bounded `ZipArchive` read as an independent reader. A new test feeds a 7z-made archive to `PhpZipExtractor`, a path nothing covered before.
+-   **PostgreSQL restores no longer refuse dumps made by current `pg_dump`.** Versions 13.22, 14.19, 15.14, 16.10, 17.6 and newer write `\restrict <key>` and `\unrestrict <key>` lines into plain dumps, which the restore treated as tampering. Exactly those two lines, with an alphanumeric key and nothing after it, are now allowed.
+-   **`notifier:database-restore` now runs the import's dump checks first**, before any snapshot is taken, so `--dry-run` can no longer report success for a dump the real import would refuse.
+-   **A failed PostgreSQL import no longer replays the pre-restore snapshot.** When `psql` rolled the import back and the schema is confirmed untouched, the snapshot is discarded and the command says the database is unchanged. When that cannot be confirmed, or the client is not `psql`, the snapshot is kept for the operator. MySQL and MariaDB imports are not atomic, so they still replay it.
 
 ## [1.8.0] - 2026-08-05
 

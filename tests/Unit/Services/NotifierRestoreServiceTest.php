@@ -396,6 +396,8 @@ it('delegates a snapshot rollback to the database importer', function () {
             return true;
         }
 
+        public function inspect(string $sqlPath): void {}
+
         public function import(string $sqlPath): void
         {
             $this->seen[] = $sqlPath;

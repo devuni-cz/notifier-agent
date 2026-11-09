@@ -46,6 +46,8 @@ function bindFakeRestoreLeaves(bool $importThrows = false, bool $rollbackThrows 
             return true;
         }
 
+        public function inspect(string $sqlPath): void {}
+
         public function import(string $sqlPath): void
         {
             $this->calls[] = $sqlPath;
@@ -349,6 +351,8 @@ describe('database restore snapshot rollback', function () {
             {
                 return true;
             }
+
+            public function inspect(string $sqlPath): void {}
 
             public function import(string $sqlPath): void {}
 

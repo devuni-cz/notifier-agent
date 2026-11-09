@@ -273,17 +273,18 @@ final readonly class NotifierRestoreService
      */
     public function importDatabase(string $extractedDirectory): void
     {
-        $dumps = glob($extractedDirectory.'/*.sql') ?: [];
+        $this->databaseImporter->import($this->singleDump($extractedDirectory));
+    }
 
-        if ($dumps === []) {
-            throw new RuntimeException('No .sql dump found in the extracted archive.');
-        }
-
-        if (count($dumps) > 1) {
-            throw new RuntimeException('Expected exactly one .sql dump, found '.count($dumps).'.');
-        }
-
-        $this->databaseImporter->import($dumps[0]);
+    /**
+     * Run the checks importDatabase() applies, without touching the database, so
+     * a dry run cannot report success for a dump the real restore would refuse.
+     *
+     * @throws RuntimeException When the dump is missing, ambiguous or refused.
+     */
+    public function inspectDatabase(string $extractedDirectory): void
+    {
+        $this->databaseImporter->inspect($this->singleDump($extractedDirectory));
     }
 
     /**
@@ -330,6 +331,26 @@ final readonly class NotifierRestoreService
         }
 
         return $written;
+    }
+
+    /**
+     * The one .sql dump a database backup extracts to.
+     *
+     * @throws RuntimeException When the directory does not hold exactly one dump.
+     */
+    private function singleDump(string $extractedDirectory): string
+    {
+        $dumps = glob($extractedDirectory.'/*.sql') ?: [];
+
+        if ($dumps === []) {
+            throw new RuntimeException('No .sql dump found in the extracted archive.');
+        }
+
+        if (count($dumps) > 1) {
+            throw new RuntimeException('Expected exactly one .sql dump, found '.count($dumps).'.');
+        }
+
+        return $dumps[0];
     }
 
     /**

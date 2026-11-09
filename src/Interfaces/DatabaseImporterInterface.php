@@ -14,6 +14,16 @@ interface DatabaseImporterInterface
     public static function isAvailable(): bool;
 
     /**
+     * Refuse a dump that import() would refuse, without touching the database.
+     * Needs neither the client binary nor a reachable server.
+     *
+     * @param  string  $sqlPath  Path to an uncompressed .sql file.
+     *
+     * @throws RuntimeException when the dump must not be imported.
+     */
+    public function inspect(string $sqlPath): void;
+
+    /**
      * Import a plain SQL dump into the configured connection.
      *
      * Destructive: the dump is applied as-is, so existing objects it recreates
