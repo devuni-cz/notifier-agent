@@ -7,6 +7,7 @@ namespace Devuni\Notifier\Services;
 use Carbon\Carbon;
 use Devuni\Notifier\Enums\BackupTypeEnum;
 use Devuni\Notifier\Interfaces\ZipCreatorInterface;
+use Devuni\Notifier\Services\Zip\BackupSeal;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
@@ -18,6 +19,7 @@ final readonly class NotifierStorageService
         private ChunkedUploadService $uploadService,
         private ZipCreatorInterface $zipCreator,
         private NotifierLoggerService $notifierLogger,
+        private BackupSeal $seal = new BackupSeal,
     ) {}
 
     public function createStorageBackup(): string
@@ -98,6 +100,10 @@ final readonly class NotifierStorageService
         }
 
         $logger->info("✅ backup archive created ({$fileCount} files): {$path}");
+
+        if (! empty($password)) {
+            $this->seal->sealQuietly($path, BackupTypeEnum::Storage, $password, $logger);
+        }
 
         return $path;
     }

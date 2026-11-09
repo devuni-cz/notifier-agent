@@ -14,8 +14,8 @@ concurrency:
 
 jobs:
   tests:
-    name: Tests - PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }}
-    runs-on: ubuntu-latest
+    name: Tests - PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }}${{ matrix.os && format(' / {0}', matrix.os) || '' }}
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -39,6 +39,12 @@ jobs:
           - php: '8.5'
             laravel: '12.*'
             testbench: '^10.0'
+          # The oldest ZIP tools still in use: p7zip 16.02 and a libzip before 1.9.
+          - php: '8.4'
+            laravel: '13.*'
+            testbench: '^11.0'
+            os: ubuntu-22.04
+            old-libzip: true
 
     steps:
       - uses: actions/checkout@v7
@@ -49,6 +55,15 @@ jobs:
           php-version: ${{ matrix.php }}
           extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, intl, fileinfo
           coverage: ${{ matrix.coverage && 'xdebug' || 'none' }}
+
+      # The 7z tests skip themselves when 7z is missing, so a missing 7z must fail here.
+      - name: Check the ZIP tools under test
+        run: |
+          sudo apt-get install -y p7zip-full
+          command -v 7z
+          7z | head -n 3
+          php -r 'echo "libzip ", ZipArchive::LIBZIP_VERSION, PHP_EOL;'
+          ${{ matrix.old-libzip && 'php -r ''exit(version_compare(ZipArchive::LIBZIP_VERSION, "1.9.0", "<") ? 0 : 1);''' || 'true' }}
 
       - name: Cache Composer dependencies
         uses: actions/cache@v6
@@ -63,14 +78,14 @@ jobs:
           composer update --prefer-stable --prefer-dist --no-interaction
 
       - name: Run tests
-        timeout-minutes: 5
+        timeout-minutes: 10
         run: vendor/bin/pest --log-junit=build/report.junit.xml ${{ matrix.coverage && '--coverage-text --coverage-clover=coverage.xml' || '--no-coverage' }}
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-results-php${{ matrix.php }}-laravel${{ matrix.laravel == '12.*' && '12' || matrix.laravel == '13.*' && '13' || matrix.laravel }}
+          name: test-results-php${{ matrix.php }}-laravel${{ matrix.laravel == '12.*' && '12' || matrix.laravel == '13.*' && '13' || matrix.laravel }}-${{ matrix.os || 'latest' }}
           path: build/report.junit.xml
           retention-days: 7
 

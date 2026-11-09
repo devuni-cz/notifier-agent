@@ -208,7 +208,7 @@ final class NotifierApiClient
      */
     private function sanitizeMessage(string $value): string
     {
-        $clean = (string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $value);
+        $clean = (string) preg_replace('/[\x00-\x1F\x7F-\x9F]+/u', ' ', $value);
 
         return mb_substr($clean, 0, 500);
     }

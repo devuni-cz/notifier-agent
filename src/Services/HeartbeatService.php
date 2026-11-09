@@ -35,6 +35,11 @@ final readonly class HeartbeatService
      */
     public const string LAST_STORAGE_BACKUP_KEY = 'notifier.last_storage_backup_at';
 
+    /**
+     * Cache key holding whether the most recent backup was sealed.
+     */
+    public const string LAST_BACKUP_SEALED_KEY = 'notifier.last_backup_sealed';
+
     public function __construct(
         private NotifierApiClient $api,
         private NotifierLoggerService $notifierLogger,
@@ -61,6 +66,7 @@ final readonly class HeartbeatService
                 'announcements' => (bool) config('notifier.features.announcements', true),
                 'backups' => (bool) config('notifier.features.backups', true),
                 'heartbeat' => (bool) config('notifier.features.heartbeat', true),
+                'sealed_backups' => filled(config('notifier.backup_zip_password')) && Cache::get(self::LAST_BACKUP_SEALED_KEY, false) === true,
             ],
             'disk_free_bytes' => $diskFree,
             'disk_total_bytes' => $diskTotal,

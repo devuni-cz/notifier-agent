@@ -225,6 +225,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Backup Sealing
+    |--------------------------------------------------------------------------
+    |
+    | Backups taken with a password carry a password-keyed seal, which a restore
+    | checks before extracting anything. Turning this off only stops new backups
+    | from being sealed; a restore never relaxes its checks because of it, so
+    | backups taken while it is off need manual approval to restore.
+    |
+    */
+    'seal_backups' => (bool) env('NOTIFIER_SEAL_BACKUPS', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Restore Extraction Limits
     |--------------------------------------------------------------------------
     |

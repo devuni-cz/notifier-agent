@@ -9,6 +9,7 @@ use Devuni\Notifier\Enums\BackupTypeEnum;
 use Devuni\Notifier\Interfaces\DatabaseDumperInterface;
 use Devuni\Notifier\Interfaces\ZipCreatorInterface;
 use Devuni\Notifier\Services\Database\LazyDatabaseDumper;
+use Devuni\Notifier\Services\Zip\BackupSeal;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
@@ -21,6 +22,7 @@ final readonly class NotifierDatabaseService
         private ZipCreatorInterface $zipCreator,
         private DatabaseDumperInterface $databaseDumper,
         private NotifierLoggerService $notifierLogger,
+        private BackupSeal $seal = new BackupSeal,
     ) {}
 
     public function createDatabaseBackup(): string
@@ -96,6 +98,8 @@ final readonly class NotifierDatabaseService
             }
 
             $logger->info('➡️ SQL dump encrypted into ZIP archive');
+
+            $this->seal->sealQuietly($zipPath, BackupTypeEnum::Database, $password, $logger);
 
             return $zipPath;
         }

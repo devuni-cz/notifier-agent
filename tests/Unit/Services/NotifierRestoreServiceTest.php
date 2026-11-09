@@ -223,8 +223,10 @@ it('refuses a storage restore that would drop a .php webshell, writing nothing',
     File::ensureDirectoryExists($target);
 
     // A legitimate-looking file alongside a webshell the server tried to smuggle in.
+    // The guard goes by extension, so the body stays inert: real webshell code here
+    // makes antivirus on developer machines quarantine the fixture mid-test.
     File::put($extracted.'/uploads/photo.jpg', 'jpeg-bytes');
-    File::put($extracted.'/uploads/shell.php', '<?php system($_GET["c"]); ?>');
+    File::put($extracted.'/uploads/shell.php', 'inert fixture');
 
     expect(fn () => app(NotifierRestoreService::class)->restoreStorage($extracted, $target))
         ->toThrow(RuntimeException::class, 'executable/interpretable file');
@@ -247,14 +249,16 @@ it('refuses a storage restore containing an .htaccess override file', function (
         ->toThrow(RuntimeException::class, 'server-override file');
 });
 
-it('stages a bare .sql download for import when no backup password is set', function () {
+it('stages a bare .sql download for import when it was approved on a host with no password', function () {
     config()->set('notifier.backup_zip_password', '');
 
     // A password-less DB backup is a bare .sql, not a ZIP. extract() must stage it.
     $archive = $this->work.'/archive.zip';
     File::put($archive, "-- dump\nCREATE TABLE t (id int);\nINSERT INTO t VALUES (1);\n");
 
-    $extractedDir = app(NotifierRestoreService::class)->extract($archive, $this->work.'/extracted');
+    $service = app(NotifierRestoreService::class);
+    $verified = $service->verify(BackupTypeEnum::Database, $archive, 7, true, hash_file('sha256', $archive));
+    $extractedDir = $service->extract($verified, $this->work.'/extracted');
 
     $dumps = glob($extractedDir.'/*.sql');
     expect($dumps)->toHaveCount(1)
@@ -267,11 +271,11 @@ it('refuses a non-ZIP download when a backup password is configured', function (
     $archive = $this->work.'/archive.zip';
     File::put($archive, "-- not a zip, just plaintext\nCREATE TABLE t;\n");
 
-    expect(fn () => app(NotifierRestoreService::class)->extract($archive, $this->work.'/extracted'))
+    expect(fn () => app(NotifierRestoreService::class)->verify(BackupTypeEnum::Database, $archive, 7, false, null))
         ->toThrow(RuntimeException::class, 'not a ZIP archive');
 });
 
-it('passes a genuine ZIP through to the extractor', function () {
+it('passes an approved ZIP through to an extractor', function () {
     config()->set('notifier.backup_zip_password', '');
 
     $archive = $this->work.'/archive.zip';
@@ -280,9 +284,105 @@ it('passes a genuine ZIP through to the extractor', function () {
     $zip->addFromString('dump.sql', 'CREATE TABLE t (id int);');
     $zip->close();
 
-    $extractedDir = app(NotifierRestoreService::class)->extract($archive, $this->work.'/extracted');
+    $service = app(NotifierRestoreService::class);
+    $verified = $service->verify(BackupTypeEnum::Database, $archive, 7, true, hash_file('sha256', $archive));
+    $extractedDir = $service->extract($verified, $this->work.'/extracted');
 
     expect(File::get($extractedDir.'/dump.sql'))->toBe('CREATE TABLE t (id int);');
+});
+
+it('restores files inside directories named like version control', function () {
+    $extracted = $this->work.'/extracted';
+    $target = $this->work.'/storage';
+    File::ensureDirectoryExists($extracted.'/CVS');
+    File::ensureDirectoryExists($extracted.'/.git');
+
+    File::put($extracted.'/CVS/report.pdf', 'pdf');
+    File::put($extracted.'/.git/notes.txt', 'notes');
+
+    $written = app(NotifierRestoreService::class)->restoreStorage($extracted, $target);
+
+    expect($written)->toBe(2)
+        ->and(File::get($target.'/CVS/report.pdf'))->toBe('pdf')
+        ->and(File::get($target.'/.git/notes.txt'))->toBe('notes');
+});
+
+it('checks files inside directories named like version control', function () {
+    $extracted = $this->work.'/extracted';
+    File::ensureDirectoryExists($extracted.'/CVS');
+    File::put($extracted.'/CVS/shell.php', 'inert fixture');
+
+    expect(fn () => app(NotifierRestoreService::class)->assertStorageEntriesSafe($extracted))
+        ->toThrow(RuntimeException::class, 'executable/interpretable file');
+});
+
+describe('the working directory of a run', function () {
+    afterEach(function () {
+        File::deleteDirectory(storage_path('app/notifier-restore'));
+    });
+
+    it('is new and empty every time', function () {
+        $service = app(NotifierRestoreService::class);
+
+        $first = $service->workDirectory();
+        File::put($first.'/left-behind.txt', 'from an interrupted run');
+        $second = $service->workDirectory();
+
+        expect($second)->not->toBe($first)
+            ->and(File::files($second))->toBe([]);
+    });
+
+    it('is private to the user running the restore', function () {
+        expect(fileperms(app(NotifierRestoreService::class)->workDirectory()) & 0777)->toBe(0700);
+    })->skipOnWindows();
+
+    it('clears runs abandoned a day ago and leaves recent ones alone', function () {
+        $service = app(NotifierRestoreService::class);
+        $abandoned = $service->workDirectory();
+        $recent = $service->workDirectory();
+        touch($abandoned, now()->subDays(2)->getTimestamp());
+
+        $service->workDirectory();
+
+        expect(File::exists($abandoned))->toBeFalse()
+            ->and(File::exists($recent))->toBeTrue();
+    });
+});
+
+it('removes control characters from error messages the server sends', function () {
+    Http::fake(['*' => Http::response(['message' => "boom\u{9B}31m\x1B[2Jdone"], 500)]);
+
+    try {
+        app(NotifierRestoreService::class)->available(BackupTypeEnum::Database);
+        $this->fail('Expected the listing to fail.');
+    } catch (RuntimeException $e) {
+        expect($e->getMessage())->toContain('boom')
+            ->not->toContain("\u{9B}")
+            ->not->toContain("\x1B");
+    }
+});
+
+it('removes control characters and markup from what the server lists', function () {
+    Http::fake(['*' => Http::response(['data' => [[
+        'id' => 1,
+        'type' => 'backup_database',
+        'name' => "evil\x1b[2J<fg=red>name</>.zip",
+        'size' => 10,
+        'created_at' => "2026-01-01\x1b[2J",
+    ], [
+        'id' => 2,
+        'type' => 'backup_database',
+        'name' => 'backup-database-2026-01-01_02-00-00-a1b2c3d4.zip',
+        'size' => 10,
+        'created_at' => '2026-07-22T10:00:00+00:00',
+    ]]], 200)]);
+
+    [$hostile, $honest] = app(NotifierRestoreService::class)->available(BackupTypeEnum::Database);
+
+    expect($hostile['name'])->toMatch('/\A[A-Za-z0-9._ -]+\z/')
+        ->and($hostile['created_at'])->toBeNull()
+        ->and($honest['name'])->toBe('backup-database-2026-01-01_02-00-00-a1b2c3d4.zip')
+        ->and($honest['created_at'])->toBe('2026-07-22T10:00:00+00:00');
 });
 
 it('delegates a snapshot rollback to the database importer', function () {
