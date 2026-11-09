@@ -35,10 +35,24 @@ final class SqlDirectiveGuard
      */
     public static function assertPostgresSafe(string $sqlPath): void
     {
+        self::postgresRestrictLines($sqlPath);
+    }
+
+    /**
+     * Inspects the script like {@see assertPostgresSafe} and reports where pg_dump's
+     * own restrict and unrestrict lines are. Only the inspection can tell them from
+     * the same text stored in a string or a COPY block.
+     *
+     * @return list<array{0: int, 1: int}> Byte offset and length of each line, in file order.
+     *
+     * @throws RuntimeException When a metacommand is found or the script cannot be verified.
+     */
+    public static function postgresRestrictLines(string $sqlPath): array
+    {
         $handle = self::open($sqlPath);
 
         try {
-            new PsqlScriptScanner($handle)->scan();
+            return new PsqlScriptScanner($handle)->scan();
         } finally {
             fclose($handle);
         }

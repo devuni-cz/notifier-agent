@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 -   **README no longer recommends scheduling the backup commands on every site.** The "Scheduled backups (recommended)" section presented client-side cron as the default, but Devuni-managed sites are backed up by the **control plane's** scheduled services (frequency configured per repository in the server's repository settings, delivered through the inbound HTTP trigger) — following the old advice would run every backup twice. The section now describes both modes explicitly: control-plane-managed (default, nothing to schedule locally) and self-scheduled (standalone or legacy projects only), with the heartbeat cron required in both.
+-   **PostgreSQL restores now keep `psql` locked against client directives for the whole run**, using its restricted mode with a key private to that run, on clients that have it (13.22, 14.19, 15.14, 16.10, 17.6, 18 and newer). `ysqlsh` and older clients restore as before and log a warning. A dump may hold at most one restrict and one unrestrict line. On Windows the restore writes a temporary copy of the dump next to it; elsewhere the dump is streamed.
 
 ### Fixed
 

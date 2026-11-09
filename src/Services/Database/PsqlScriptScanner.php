@@ -81,9 +81,25 @@ final class PsqlScriptScanner
 
     private const array ROUTINE_HEADER_WORDS = ['create' => 'c', 'function' => 'f', 'procedure' => 'p', 'or' => 'o', 'replace' => 'r'];
 
+    /**
+     * A plain pg_dump writes one restrict line and one unrestrict line. Refusing
+     * more keeps the recorded positions, and so the scan, in constant memory.
+     */
+    private const int MAX_RESTRICT_LINES = 2;
+
     private string $buffer = '';
 
     private int $pos = 0;
+
+    /**
+     * Bytes of the script already dropped from the front of the window.
+     */
+    private int $windowStart = 0;
+
+    /**
+     * @var list<array{0: int, 1: int}>
+     */
+    private array $restrictLines = [];
 
     private int $length = 0;
 
@@ -112,9 +128,13 @@ final class PsqlScriptScanner
     public function __construct(private $handle) {}
 
     /**
+     * @return list<array{0: int, 1: int}> Byte offset and length of each restrict
+     *                                     or unrestrict line, in file order, from
+     *                                     its backslash up to its line feed.
+     *
      * @throws RuntimeException When the script is refused or cannot be read.
      */
-    public function scan(): void
+    public function scan(): array
     {
         $this->fill();
 
@@ -137,6 +157,8 @@ final class PsqlScriptScanner
         if (! $this->statementIsEmpty()) {
             $this->cannotVerify();
         }
+
+        return $this->restrictLines;
     }
 
     private function newLine(): void
@@ -233,6 +255,11 @@ final class PsqlScriptScanner
             SqlDirectiveGuard::reject('psql', $this->line);
         }
 
+        if (count($this->restrictLines) === self::MAX_RESTRICT_LINES) {
+            $this->cannotVerify();
+        }
+
+        $this->restrictLines[] = [$this->windowStart + $this->pos, $span];
         $this->pos += $span;
     }
 
@@ -662,6 +689,7 @@ final class PsqlScriptScanner
         }
 
         $this->buffer = mb_substr($this->buffer, $this->pos, null, self::BYTES).$chunk;
+        $this->windowStart += $this->pos;
         $this->pos = 0;
         $this->length = mb_strlen($this->buffer, self::BYTES);
 

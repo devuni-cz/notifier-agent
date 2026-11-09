@@ -6,12 +6,22 @@ namespace Devuni\Notifier\Services\Database;
 
 use Devuni\Notifier\Interfaces\DatabaseImporterInterface;
 use Devuni\Notifier\Services\NotifierLoggerService;
+use Generator;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 use Throwable;
 
 final class PostgresImporter implements DatabaseImporterInterface
 {
+    /**
+     * First minor release of each supported major version with restricted mode.
+     */
+    private const array RESTRICTED_MODE_SINCE = [13 => 22, 14 => 19, 15 => 14, 16 => 10, 17 => 6];
+
+    private const int RESTRICTED_MODE_EVERY_RELEASE_FROM = 18;
+
+    private const int CHUNK_BYTES = 65_536;
+
     /**
      * @param  string  $connection  Laravel database connection name (e.g. "pgsql").
      */
@@ -23,6 +33,25 @@ final class PostgresImporter implements DatabaseImporterInterface
     public static function isAvailable(): bool
     {
         return self::binaryAvailable('ysqlsh') || self::binaryAvailable('psql');
+    }
+
+    /**
+     * Whether a client, judged by its `--version` line, has restricted mode.
+     *
+     * Only a stock psql release counts. Forks such as ysqlsh follow their own patch
+     * history, so a version number says nothing about them, and prereleases are
+     * left out as well.
+     */
+    public static function supportsRestrictedMode(?string $version): bool
+    {
+        if ($version === null || preg_match('/^psql \(PostgreSQL\) ([0-9]+)\.([0-9]+)(?:\s|$)/', $version, $matches) !== 1) {
+            return false;
+        }
+
+        $major = (int) $matches[1];
+
+        return $major >= self::RESTRICTED_MODE_EVERY_RELEASE_FROM
+            || (int) $matches[2] >= (self::RESTRICTED_MODE_SINCE[$major] ?? PHP_INT_MAX);
     }
 
     public function inspect(string $sqlPath): void
@@ -41,7 +70,7 @@ final class PostgresImporter implements DatabaseImporterInterface
         // Refuse a dump carrying psql metacommands (\!, \copy, \i, ...) before a
         // single byte reaches the client - a tampered archive could otherwise run
         // a shell command as the app user via `\!`.
-        $this->inspect($sqlPath);
+        $restrictLines = SqlDirectiveGuard::postgresRestrictLines($sqlPath);
 
         $config = config("database.connections.{$this->connection}");
 
@@ -56,13 +85,36 @@ final class PostgresImporter implements DatabaseImporterInterface
         }
 
         $binary = $this->resolveBinary();
+        $restrictKey = self::supportsRestrictedMode($this->clientVersion($binary)) ? bin2hex(random_bytes(32)) : null;
 
-        $process = new Process($this->buildCommand($binary, $config, (string) $database, $sqlPath));
-        // Restores of large dumps legitimately run for a long time.
-        $process->setTimeout(null);
-        // Password via env var (not argv) to keep it out of /proc/*/cmdline and `ps` output.
-        $process->setEnv(['PGPASSWORD' => (string) ($config['password'] ?? '')]);
-        $process->run();
+        if ($restrictKey === null) {
+            $logger->warning('⚠️ '.$binary.' has no restricted mode, restoring with the dump inspection as the only check. '
+                .'PostgreSQL clients 13.22, 14.19, 15.14, 16.10, 17.6 and 18 or newer have it.');
+
+            // Such a client reads the dump as it is, its own restrict lines included.
+            $restrictLines = [];
+        }
+
+        $copy = $restrictLines !== [] && PHP_OS_FAMILY === 'Windows' ? $this->copyWithoutLines($sqlPath, $restrictLines) : null;
+        $streamed = $restrictLines !== [] && $copy === null;
+
+        try {
+            $process = new Process($this->buildCommand($binary, $config, (string) $database, $copy ?? ($streamed ? '-' : $sqlPath), $restrictKey));
+            // Restores of large dumps legitimately run for a long time.
+            $process->setTimeout(null);
+            // Password via env var (not argv) to keep it out of /proc/*/cmdline and `ps` output.
+            $process->setEnv(['PGPASSWORD' => (string) ($config['password'] ?? '')]);
+
+            if ($streamed) {
+                $process->setInput($this->withoutLines($sqlPath, $restrictLines));
+            }
+
+            $process->run();
+        } finally {
+            if ($copy !== null) {
+                @unlink($copy);
+            }
+        }
 
         if (! $process->isSuccessful()) {
             $logger->error('❌ '.$binary.' import failed', [
@@ -75,14 +127,52 @@ final class PostgresImporter implements DatabaseImporterInterface
     }
 
     /**
+     * Reads a script without the given byte ranges, in constant memory.
+     *
+     * A read error must surface as an exception: if the script just ended early,
+     * the client would commit a partial restore.
+     *
+     * @param  list<array{0: int, 1: int}>  $lines  Offset and length of each range, in file order.
+     * @return Generator<int, string>
+     */
+    public function withoutLines(string $sqlPath, array $lines): Generator
+    {
+        $handle = fopen($sqlPath, 'rb');
+
+        if ($handle === false) {
+            throw new RuntimeException('Unable to open SQL dump for restore: '.$sqlPath);
+        }
+
+        try {
+            $position = 0;
+
+            foreach ($lines as [$offset, $length]) {
+                yield from $this->readBytes($handle, $offset - $position);
+
+                $position = $offset + $length;
+
+                if (fseek($handle, $position) !== 0) {
+                    throw new RuntimeException('Unable to read SQL dump for restore: '.$sqlPath);
+                }
+            }
+
+            yield from $this->readBytes($handle, PHP_INT_MAX);
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /**
      * Build the psql/ysqlsh argv. The password is intentionally absent here - it
      * is passed via the PGPASSWORD env var in import() so it never reaches the
      * process table.
      *
      * @param  array<string, mixed>  $config
+     * @param  string  $sqlPath  Script to run, or `-` to read it from standard input.
+     * @param  string|null  $restrictKey  Private key that keeps psql in restricted mode.
      * @return list<string>
      */
-    public function buildCommand(string $binary, array $config, string $database, string $sqlPath): array
+    public function buildCommand(string $binary, array $config, string $database, string $sqlPath, ?string $restrictKey = null): array
     {
         $schema = (string) config('notifier.postgres_schema', 'public');
 
@@ -104,6 +194,9 @@ final class PostgresImporter implements DatabaseImporterInterface
             '--port='.($config['port'] ?? 5432),
             '--host='.($config['host'] ?? '127.0.0.1'),
             '--dbname='.$database,
+            // Runs first, so the client refuses every directive for the whole
+            // restore. The key is new for each run and known only to this process.
+            ...($restrictKey === null ? [] : ['--command=\\restrict '.$restrictKey]),
             // PostgresDumper emits a PLAIN dump without --clean/--if-exists, so
             // replaying it into a non-empty database dies on the first
             // "relation already exists" - which, with ON_ERROR_STOP +
@@ -122,14 +215,8 @@ final class PostgresImporter implements DatabaseImporterInterface
     public function describe(): string
     {
         $binary = $this->resolveBinary();
-        $process = new Process([$binary, '--version']);
-        $process->run();
 
-        if (! $process->isSuccessful()) {
-            return $binary.' (version unknown)';
-        }
-
-        return mb_trim($process->getOutput());
+        return $this->clientVersion($binary) ?? $binary.' (version unknown)';
     }
 
     private static function binaryAvailable(string $binary): bool
@@ -143,6 +230,70 @@ final class PostgresImporter implements DatabaseImporterInterface
         }
 
         return $process->isSuccessful();
+    }
+
+    private function clientVersion(string $binary): ?string
+    {
+        $process = new Process([$binary, '--version']);
+        $process->run();
+
+        return $process->isSuccessful() ? mb_trim($process->getOutput()) : null;
+    }
+
+    /**
+     * psql on Windows reads standard input in text mode, which rewrites line endings
+     * and takes a 0x1A byte for the end of the script, so it has to get a real file.
+     *
+     * @param  list<array{0: int, 1: int}>  $lines
+     */
+    private function copyWithoutLines(string $sqlPath, array $lines): string
+    {
+        $copy = tempnam(dirname($sqlPath), 'restore_');
+        $handle = $copy === false ? false : fopen($copy, 'wb');
+
+        if ($copy === false || $handle === false) {
+            throw new RuntimeException('Unable to create a working copy of the SQL dump next to: '.$sqlPath);
+        }
+
+        try {
+            foreach ($this->withoutLines($sqlPath, $lines) as $chunk) {
+                if (fwrite($handle, $chunk) !== mb_strlen($chunk, '8bit')) {
+                    throw new RuntimeException('Unable to write a working copy of the SQL dump next to: '.$sqlPath);
+                }
+            }
+        } catch (Throwable $exception) {
+            fclose($handle);
+            @unlink($copy);
+
+            throw $exception;
+        }
+
+        fclose($handle);
+
+        return $copy;
+    }
+
+    /**
+     * @param  resource  $handle
+     * @return Generator<int, string>
+     */
+    private function readBytes($handle, int $bytes): Generator
+    {
+        while ($bytes > 0) {
+            $chunk = fread($handle, min($bytes, self::CHUNK_BYTES));
+
+            if ($chunk === false) {
+                throw new RuntimeException('Unable to read SQL dump for restore.');
+            }
+
+            if ($chunk === '') {
+                return;
+            }
+
+            $bytes -= mb_strlen($chunk, '8bit');
+
+            yield $chunk;
+        }
     }
 
     /**
