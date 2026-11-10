@@ -9,234 +9,247 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.9.0] - 2026-11-10
 
+### Upgrading
+
+-   Backups made before 1.9.0 have no seal. Restoring one needs `--id=N` and `--accept-unverified=<sha256>`; the refused restore prints both.
+-   `--force` does not replace that approval. Sites without a backup password need it too.
+-   Upgrade production before staging.
+-   Custom `DatabaseImporterInterface` implementations need `inspect(string $sqlPath): void`.
+-   Custom `ZipExtractorInterface::extract()` implementations need a fourth argument, `bool $sealVerified = false`.
+
 ### Added
 
--   **Backups taken with a password now carry a password-keyed seal in the ZIP comment.** A restore verifies it before extracting anything and prints the authenticated backup type and date. The seal is added after the ZIP is finished, so it works the same for 7z and ZipArchive output, and the archive stays a standard ZIP that older agents and the control plane read unchanged. `NOTIFIER_SEAL_BACKUPS=false` stops new backups from being sealed; it never relaxes a restore.
--   **`notifier:check` tests sealing** with the ZIP tools the host really uses, and the heartbeat reports `sealed_backups` under `enabled_features` for the most recent backup.
--   **Backup downloads have a size limit.** `NOTIFIER_RESTORE_MAX_DOWNLOAD_BYTES` (default 20 GiB, the largest backup the control plane accepts; `0` turns it off) caps how many bytes a restore writes to disk while downloading an archive. A larger download stops with a clear error and leaves no partial file behind.
+-   Backups made with a password are sealed in the ZIP comment. The archive stays a normal ZIP.
+-   `NOTIFIER_SEAL_BACKUPS=false` stops sealing new backups. It does not relax restores.
+-   `notifier:check` tests sealing; the heartbeat reports `sealed_backups`.
+-   `NOTIFIER_RESTORE_MAX_DOWNLOAD_BYTES` caps restore downloads (default 20 GiB, `0` = no limit).
 
 ### Changed
 
--   **BREAKING: a restore refuses an archive whose seal cannot be verified**, including every backup taken before this release, unless given `--id=N` and the `--accept-unverified=` value the refusal prints for that exact file. `--force` cannot replace this approval, and neither can any config value. Hosts with no backup password need the same approval. An approved storage restore without a valid seal goes to a private directory for manual review instead of public storage. The newest backup needs `--id` when its seal is older than 35 days. `--dry-run` applies the same checks. Upgrade production agents before staging.
--   **Restore confirmation now comes after verification**, so what the operator confirms is authenticated. The production `--force` gate still runs before anything is downloaded.
--   **`ZipExtractorInterface::extract()` takes an optional fourth argument**, `bool $sealVerified = false`. Custom implementations need to accept it.
--   **`DatabaseImporterInterface` has a new required method**, `inspect(string $sqlPath): void`. Custom implementations need to add it, or PHP stops with a fatal error when the class is loaded.
--   **Guzzle 8 is now allowed** (`guzzlehttp/guzzle: ^7.15.2 || ^8.3.1`). The agent talks HTTP only through Laravel's `Http` client, and Laravel 13 accepts Guzzle `^7.8.2 || ^8.0`, so Laravel 13 installs can move to Guzzle 8 while Laravel 12 installs keep resolving 7.x. The 7.x floor (CVE fixes from 1.7.3) is unchanged.
--   **The `nesbot/carbon` conflict is narrowed from `>=3.12.0` to exactly `3.12.0`.** Only carbon 3.12.0 declares `Carbon::plus(..., ?bool $overflow)`, which is fatal against Laravel 12's `Illuminate\Support\Carbon::plus()` override; 3.12.1 dropped that method again and every release up to 3.15.1 boots cleanly on Laravel 12.70. Installs were held on carbon 3.11.x for no reason and now get current carbon fixes.
--   **Dev tooling bumped to the latest releases:** Pest 5 / PHPUnit 13 on Laravel 13 (`pestphp/pest: ^4.7.8 || ^5.3.4` - Pest 5 requires Laravel 13 and Symfony 8, so the Laravel 12 CI rows keep Pest 4), plus Larastan 3.13, Pint 1.32, Rector 2.8, Testbench 11.3, Filament support 5.11, Mockery 1.6.15 and Collision 8.9.5.
--   **PHPStan now analyses the package with its own service provider booted** (new `testbench.yaml`, excluded from the dist archive). Without it Larastan did not know the `notifier::` view namespace and reported the Filament banner's view name as an invalid `view-string`.
--   **Rector 2.8's PHP 8.2-8.4 refactors applied to `src/`.** The services, dumpers/importers, zip creators/extractors, the backup controller and the token middleware are now `final readonly class` (they were already `final` with only readonly properties, so nothing can observe the difference); class constants are typed; `PhpZipCreator` uses `array_any()`; closures and arrow functions declare return types. The status-poll failure in `ChunkedUploadService` now chains the underlying exception as `previous` (code `0`, since a `Throwable` code may be a string), so exception handlers can see the root cause; the `backup` log still records only its message. `LocallyCalledStaticMethodToNonStaticRector` is skipped in `rector.php`: the service provider's static helpers are deliberately pure.
--   **README no longer recommends scheduling the backup commands on every site.** The "Scheduled backups (recommended)" section presented client-side cron as the default, but Devuni-managed sites are backed up by the **control plane's** scheduled services (frequency configured per repository in the server's repository settings, delivered through the inbound HTTP trigger) — following the old advice would run every backup twice. The section now describes both modes explicitly: control-plane-managed (default, nothing to schedule locally) and self-scheduled (standalone or legacy projects only), with the heartbeat cron required in both.
--   **PostgreSQL restores now keep `psql` locked against client directives for the whole run**, using its restricted mode with a key private to that run, on clients that have it (13.22, 14.19, 15.14, 16.10, 17.6, 18 and newer). `ysqlsh` and older clients restore as before and log a warning. A dump may hold at most one restrict and one unrestrict line. On Windows the restore writes a temporary copy of the dump next to it; elsewhere the dump is streamed.
+-   Restores verify the archive before asking for confirmation.
+-   An approved restore of unsealed storage goes to a private directory, not to public storage.
+-   Without `--id`, a restore picks the newest backup only if its seal is under 35 days old.
+-   PostgreSQL restores run `psql` in restricted mode (13.22, 14.19, 15.14, 16.10, 17.6, 18+). Older clients and `ysqlsh` log a warning.
+-   Guzzle 8 allowed (`^7.15.2 || ^8.3.1`).
+-   `nesbot/carbon` conflict narrowed to `3.12.0` only.
+-   Dev: Pest 5 / PHPUnit 13 on Laravel 13, Larastan 3.13, Pint 1.32, Rector 2.8, Testbench 11.3.
+-   Rector PHP 8.2-8.4 refactors in `src/`.
+-   README: the control plane schedules backups by default; self-scheduling is for standalone sites.
 
 ### Fixed
 
--   **The PHP restore path reports a failed entry clearly and no longer misreports healthy 7z archives as corrupt.** Every entry is checked against its declared size and a failure raises a `RuntimeException` naming the entry and the cause. Separately, 7-Zip writes WinZip AE-2 entries with a CRC of 0, which libzip before 1.9 (Ubuntu 22.04 and 24.04 ship 1.7.3) rejects from 20 bytes up. Such entries now restore on those hosts as well, without installing 7z.
--   **Storage restores no longer skip files inside directories named like version control** (`.git`, `.svn`, `CVS` and so on), which were left out silently.
--   **`--id` on the restore commands must be a positive whole number.** Anything else used to be read as `0`.
--   **`CliZipCreatorTest` passes again on PHP 8.4.26 / 8.5.11 and newer.** Those releases made `ZipArchive::getFromName()` read past the last byte so that libzip validates the CRC (php/php-src GH-23240), which exposed the AE-2 mismatch above. The test now checks the right and wrong password through `7z x`, which verifies the AES authentication code, and keeps a bounded `ZipArchive` read as an independent reader. A new test feeds a 7z-made archive to `PhpZipExtractor`, a path nothing covered before.
--   **PostgreSQL restores no longer refuse dumps made by current `pg_dump`.** Versions 13.22, 14.19, 15.14, 16.10, 17.6 and newer write `\restrict <key>` and `\unrestrict <key>` lines into plain dumps, which the restore treated as tampering. Exactly those two lines, with an alphanumeric key and nothing after it, are now allowed.
--   **`notifier:database-restore` now runs the import's dump checks first**, before any snapshot is taken, so `--dry-run` can no longer report success for a dump the real import would refuse.
--   **A failed PostgreSQL import no longer replays the pre-restore snapshot.** When `psql` rolled the import back and the schema is confirmed untouched, the snapshot is discarded and the command says the database is unchanged. When that cannot be confirmed, or the client is not `psql`, the snapshot is kept for the operator. MySQL and MariaDB imports are not atomic, so they still replay it.
--   **PostgreSQL restores no longer refuse genuine dumps whose stored text only looks like a client directive.** The dump inspection also runs in constant memory now.
+-   Dumps from current `pg_dump` (13.22, 14.19, 15.14, 16.10, 17.6+) restore again.
+-   PostgreSQL dumps whose data looks like a `psql` command are no longer refused.
+-   `notifier:database-restore` checks the dump before taking a snapshot; `--dry-run` runs the same checks.
+-   A failed PostgreSQL import no longer replays the snapshot. The snapshot is deleted if `psql` confirms the rollback, kept otherwise. MySQL and MariaDB still replay it.
+-   7-Zip AES archives restore with libzip < 1.9 (Ubuntu 22.04, 24.04) without 7z installed.
+-   A failed archive entry is reported by name.
+-   Storage restores include files in `.git`, `.svn` and similar directories.
+-   `--id` must be a positive integer (other values were read as `0`).
 
 ## [1.8.0] - 2026-08-05
 
 ### Added
 
--   **The restore workflow is now discoverable end to end** ([#27](https://github.com/devuni-cz/notifier-agent/issues/27)). The `notifier:database-restore` / `notifier:storage-restore` commands have existed since 1.7.0, but nothing surfaced them: the README never mentioned them and a fresh install had no `NOTIFIER_RESTORE_TOKEN`, so restore was silently disabled until the operator discovered it from a runtime error.
-    -   `notifier:install` now offers to configure the restore token (issued per repository on the control plane) and to generate a dedicated inbound trigger secret. Both prompts default to **skip**, so the classic three-value install is unchanged — and the trigger-secret prompt warns that the control plane must be configured with the same value before remote triggers work again.
-    -   `notifier:check` gained a "restore & trigger credentials" section: it **warns** when the restore token is missing (restore commands disabled) and reports whether the inbound trigger runs in single-secret mode (backup code doubling as trigger secret) or with a dedicated secret.
-    -   The README documents the restore commands and a **"Bootstrapping a fresh deployment"** guide: deploy → carry over the **original** `NOTIFIER_BACKUP_PASSWORD` (archives are encrypted with it — a freshly generated password cannot decrypt them) + set the restore token → restore both backups (`--force` on production) — and explicitly explains that backing up a freshly migrated, near-empty database is *expected* to be rejected by the control plane's "Backup too small" threshold, so restore comes first and backups start once there is data.
-    -   The installer is safe to re-run: `--force` now prefills the current values and asks to **keep the existing backup password** (default yes), so adding a restore token can no longer accidentally rotate the password that encrypts every already-uploaded archive. The restore token prompt is non-echoing (`password()`, not `text()`) and rejects the backup code/password pasted by mistake — and `notifier:check` warns instead of passing when the restore token equals the backup code, so a mixed-up credential cannot hide behind a green check.
+-   README documents the restore commands and bootstrapping a fresh deployment ([#27](https://github.com/devuni-cz/notifier-agent/issues/27)).
+-   Bootstrapping: keep the original `NOTIFIER_BACKUP_PASSWORD`, restore first, then start backups (a near-empty database is rejected as too small).
+-   `notifier:install` can set `NOTIFIER_RESTORE_TOKEN` and a dedicated trigger secret. Both default to skip.
+-   `notifier:install --force` prefills current values and keeps the backup password by default.
+-   The restore token prompt hides input and rejects the backup code or password.
+-   `notifier:check` warns when the restore token is missing or equals the backup code, and shows the trigger mode.
 
 ## [1.7.3] - 2026-08-05
 
 ### Security
 
--   **Bump `guzzlehttp/guzzle` to `^7.15.2` to clear two fresh advisories** (reported 2026-08-03): CVE-2026-69246 (high — a noncanonical host can bypass host-based checks; directly relevant to the agent's trusted-status-URL origin guard) and CVE-2026-69245 (medium — a noncanonical cookie domain keeps subdomain scope). No code changes.
+-   `guzzlehttp/guzzle` `^7.15.2` (CVE-2026-69246, CVE-2026-69245).
 
 ### Fixed
 
--   **A Laravel 12 client install can no longer resolve an incompatible `nesbot/carbon`.** Laravel 12.62's `Illuminate\Support\Carbon::plus()` override is fatally incompatible with carbon `3.12+` (which added a `?bool $overflow` parameter), and the protective pin lived only in this repository's CI matrix — so CI stayed green while a client site running `composer update` on Laravel 12 could pull carbon 3.12 and crash on boot. The pin is now a composer `conflict` (`nesbot/carbon >= 3.12.0`), so every install resolves carbon 3.11.x until Laravel 12 ships a fix. Laravel 13 accepts carbon `^3.8.4`, so Laravel 13 installs keep working — they are merely held back from 3.12+ until the conflict is lifted.
--   **Concurrent backup runs can no longer clobber each other's archive.** Every backup wrote `backup-<timestamp>.zip` into `storage/app/private` with one-second resolution, and concurrent runs are real: a database and a storage backup may run at once (the trigger lock is per type), and a scheduled command can meet a trigger-driven run of the same type (the command path takes no lock). The CLI zip creator deletes a pre-existing target as "stale", so a same-second neighbour could delete or overwrite an archive mid-run. Archive names now carry a type prefix **and a random per-run suffix** (`backup-database-<timestamp>-<random>.zip` / `backup-storage-…`), so no two runs can ever share a path; the database dump and its ZIP also share one timestamp instead of taking two.
--   **Trigger-driven backups now stamp the heartbeat timestamps.** The `last_database_backup_at` / `last_storage_backup_at` success stamp was written only by the artisan commands, so a backup started via the inbound trigger (sync or queued) shipped fine but the heartbeat manifest kept reporting the old timestamp — the control plane could alarm on backups that were in fact running nightly. The stamp now lives in the upload services, at the one point every successful upload passes through, covering the command, sync-trigger and queued paths alike.
--   **A queued backup job re-checks the environment before running.** `ProcessBackupJob` ran without any environment validation — the trigger route's middleware checks it, but a job dispatched directly from host code (or an env change between dispatch and a queued run) could produce an **unencrypted** database upload when `NOTIFIER_BACKUP_PASSWORD` was missing. The job now fails fast with the missing variable names, matching the command path's refusal to run.
--   **An effectively-empty storage backup skips cleanly instead of failing against the server.** A site whose `storage/app/public` holds only a placeholder (`.gitkeep`) produced a ~200 B archive: the agent's own "nothing to back up" floor was just 100 B, so the archive shipped — and the control plane rejected it with "Backup too small (< 102 400 B)", turning every scheduled run into a hard failure. The agent floor is now configurable (`NOTIFIER_MIN_STORAGE_BACKUP_BYTES`) and defaults to the server's 102 400 B, so a sub-threshold archive is treated like an empty source: warn + skip (exit 0), no upload, no heartbeat stamp. `.gitkeep` also joined `.gitignore` in the default storage exclusions, so a placeholder-only directory is recognized as empty outright. Database backups are unaffected — a database dump is never legitimately empty, so it always ships.
--   **CHANGELOG footer links repaired.** The `[1.7.1]` and `[1.7.2]` sections had no link definitions and `[Unreleased]` still compared from `v1.7.0`.
+-   Laravel 12 installs can no longer pull `nesbot/carbon` 3.12+, which crashed on boot (composer `conflict`).
+-   Concurrent backups no longer overwrite each other's archive. Names are now `backup-<type>-<timestamp>-<random>.zip`.
+-   Trigger-driven backups update the heartbeat's last backup time.
+-   `ProcessBackupJob` checks the environment first, so a missing `NOTIFIER_BACKUP_PASSWORD` can't produce an unencrypted upload.
+-   Near-empty storage backups are skipped instead of failing on the server. Threshold: `NOTIFIER_MIN_STORAGE_BACKUP_BYTES` (default 102400).
+-   `.gitkeep` is excluded from storage backups by default.
+-   CHANGELOG footer links fixed.
 
 ## [1.7.2] - 2026-07-27
 
 ### Security
 
--   **The backup trigger no longer allows a resource-exhaustion flood.** The inbound `POST {prefix}/backup` runs the full dump + zip **synchronously** in the PHP-FPM worker on the default `sync` connection, and its route throttle is per-IP (trivially rotated), so a holder of the trigger secret could stack unbounded concurrent backups and take the client site offline. Each backup type is now serialized with a `Cache::lock` — a second same-type trigger returns **429** instead of piling another dump onto the worker (a database and a storage backup may still run at once), released in `finally` and auto-expiring after 900s so a crashed worker cannot wedge the type — and `ProcessBackupJob` is now `ShouldBeUnique` per type, so a flood on a queued connection collapses to one in-flight job per type instead of an unbounded backlog.
+-   Backup trigger: one running backup per type (`Cache::lock`, 900 s). A second trigger of the same type gets `429`.
+-   `ProcessBackupJob` is unique per type, so a flood of triggers queues one job per type.
 
 ## [1.7.1] - 2026-07-23
 
 ### Security
 
--   **Bump `guzzlehttp/guzzle` to `^7.15.1` to clear nine dependency advisories.** The previous `^7.11.1` floor still resolved versions affected by seven Guzzle advisories (URI fragments leaking into `Referer` on redirect, host-only cookie scope not preserved, unbounded response cookies, `Proxy-Authorization` sent to origin servers, dot-only cookie domains matching all hosts, a silent HTTPS→cleartext proxy downgrade, and CVE-2026-59883 cookie disclosure/injection via IP-address domains) and, transitively, two `guzzlehttp/psr7` advisories (host confusion via weak URI host validation, CRLF injection in start-line serialization). `^7.15.1` pulls a fixed Guzzle which in turn requires `guzzlehttp/psr7 >= 2.13`, so `composer audit` now reports no advisories. No code changes — the agent's HTTP surface is unchanged.
+-   `guzzlehttp/guzzle` `^7.15.1`, which also pulls `guzzlehttp/psr7` 2.13+. Clears nine advisories (seven Guzzle, two psr7).
 
 ## [1.7.0] - 2026-07-23
 
 ### Added
 
--   **Restore commands: `notifier:database-restore` and `notifier:storage-restore`.** Pull this site's own backups back down from the control plane and apply them — for bootstrapping a new node, disaster recovery, or refreshing staging. Restore is authenticated with a **separate** `NOTIFIER_RESTORE_TOKEN`, never the backup code, so leaking the credential that _uploads_ backups cannot also be used to _download_ them; an install with no restore token configured cannot restore at all. Both commands support `--list`, `--dry-run`, `--id=` (defaults to the newest backup) and, in production, require `--force`; the database restore additionally asks you to type the database name to confirm and dumps the current database to a pre-restore snapshot first (skip with `--no-snapshot`). Storage restore is additive — it overwrites files with matching paths but never deletes anything the backup predates.
--   **Restore is hardened against a hostile or compromised control plane.** A downloaded archive is verified against the SHA-256 checksum the server recorded at upload time (the listing copy and the response header must agree, and both must match the bytes on disk) before anything is applied. The extractor refuses an archive whose entries are not encrypted, caps the extracted size to defuse zip bombs, and rejects path-traversal (zip-slip) and absolute-path entries. A restored SQL dump is scanned for client-side directives (`\!`, `system`, `source`, `\copy` …) and refused before a single byte reaches the database client, closing an RCE path through a poisoned dump.
--   **`features.backups` is now a real toggle.** The heartbeat manifest has always advertised a `backups` flag, but the key it reads was never defined in `config/notifier.php`, so it was hard-wired to `true` and could not be turned off. The key now exists and is driven by `NOTIFIER_BACKUPS_ENABLED`, letting a site that intentionally does not back up say so to the control plane instead of appearing to be a silent failure.
+-   `notifier:database-restore` and `notifier:storage-restore` download this site's backups and apply them.
+    -   Needs a separate `NOTIFIER_RESTORE_TOKEN`. Without it, restore is disabled.
+    -   Options: `--list`, `--dry-run`, `--id=` (default newest), `--force` (required in production).
+    -   Database restore asks for the database name and takes a snapshot first (`--no-snapshot` skips it).
+    -   Storage restore adds and overwrites files, never deletes.
+-   Restore checks: SHA-256 against the server's record, encrypted entries only, size cap, no path traversal, SQL dumps with client directives refused.
+-   `NOTIFIER_BACKUPS_ENABLED` drives `features.backups` in the heartbeat.
 
 ### Changed
 
--   **Announcement config fallbacks now match the shipped defaults.** `AnnouncementsService` fell back to `false` for `features.announcements` and `60` for `announcements.failure_cache_ttl`, while `config/notifier.php` ships `true` and `300`. The in-code fallbacks were aligned with the config. These fallbacks only apply when the key is absent entirely — a site whose **published** config predates these keys will now default announcements to **on** (still a no-op until `NOTIFIER_URL` is set) and cache a failed fetch for 5 minutes instead of 1.
+-   Announcement fallbacks match the config defaults (enabled, failed fetch cached 300 s). Affects sites with an old published config.
 
 ### Removed
 
--   **Dead code in `BackupTypeEnum`.** `values()` and `validationRule()` had no callers — request validation goes through `Rule::enum` — and were removed.
+-   Unused `BackupTypeEnum::values()` and `validationRule()`.
 
 ### Internal
 
--   CI matrix now also covers PHP 8.5 + Laravel 12, the one supported combination that was untested.
--   CHANGELOG compare links, README badge and `VERSION_MANAGEMENT.md` corrected; `TODO.md` refreshed against the actual state of the code.
+-   CI covers PHP 8.5 + Laravel 12.
+-   Fixed CHANGELOG links, README badge and `VERSION_MANAGEMENT.md`.
 
 ## [1.6.2] - 2026-06-18
 
 ### Fixed
 
--   **A failed or empty storage backup can no longer report success.** After building the archive the agent now checks its size; a `< 100 B` (or unreadable) file is treated as "nothing to back up" — it logs a warning, removes the stub file and skips the upload instead of silently reporting a successful run. The heartbeat success timestamp is likewise stamped **only after a real upload completes**, so a creation failure or an empty source can no longer leave a green heartbeat behind a backup that never actually shipped.
+-   An empty or failed storage archive (< 100 B) is skipped with a warning, not reported as success.
+-   The heartbeat's last backup time is set only after an upload completes.
 
 ### Changed
 
--   **Backup commands fail cleanly.** Archive-creation errors now exit `1` with a readable message via the shared backup flow instead of surfacing an uncaught stack trace.
--   **CLI output overhauled.** `notifier:check`, the backup commands, `notifier:heartbeat` and `notifier:install` now share one pass/warn/fail report vocabulary with a tri-state `RESULT` summary; `notifier:install` masks the backup code/password in its recap (presence and length only, never plaintext); a non-writable storage path prints an actionable chown/chmod hint; and logo/badge/ANSI decoration is suppressed when the output is not a TTY, so cron and redirected logs stay clean.
+-   Backup commands exit `1` with a readable message when the archive can't be created.
+-   One output style for `notifier:check`, the backup commands, `notifier:heartbeat` and `notifier:install`.
+-   `notifier:install` masks secrets in its summary.
+-   An unwritable storage path prints a fix hint.
+-   No colours or logo when output isn't a terminal.
 
 ## [1.6.1] - 2026-06-17
 
 ### Security
 
--   **Hardened the v1.6.0 correlation logging against injection.** The request-id validation regex now uses the `/D` anchor so a trailing newline can no longer slip through `withRequestId()` / the response-field guard, and the server-supplied upload `status` is control-character-stripped and length-capped before it is logged (the one server string the v1.6.0 work left raw).
+-   Request ID validation no longer accepts a trailing newline.
+-   The server's upload `status` is stripped of control characters and length-capped before logging.
 
 ## [1.6.0] - 2026-06-17
 
 ### Added
 
--   **End-to-end request correlation** — every HTTP call of a single backup run (init → chunks → finalize → status poll) now carries one shared `X-Request-Id`, so a run can be matched across the agent log and the control-plane log with a single `grep <request_id>`. Additive and backward-compatible: an un-upgraded server simply ignores the header.
--   **Server error surfacing** — when the control plane returns a `5xx`, the agent reads the structured `error_id` / `request_id` from the response (body or `X-Request-Id` header) and appends them to the failure message and logs (e.g. `Failed to initialize upload: HTTP 500 - Internal Server Error (error_id=…, request_id=…)`), turning an opaque "Server Error" into a pointer straight to the matching server-side exception. All server-supplied fields (the message and the ids) are sanitized — control characters stripped, length capped — before they reach a log line; the token is never logged.
--   **Structured upload logs** — chunked-upload log entries now include `stage` (`init_upload` / `send_chunk` / `finalize` / `poll_status`), `upload_id`, `attempt`, `chunk_number` and `status` for faster diagnosis.
+-   All HTTP calls of one backup share an `X-Request-Id`.
+-   On a server `5xx`, the failure message includes the server's `error_id` and `request_id` (sanitized).
+-   Upload logs include `stage`, `upload_id`, `attempt`, `chunk_number` and `status`.
 
 ### Changed
 
--   Upload failures are now logged at `error` level instead of `emergency` — a transient upload failure is no longer the highest severity, so genuine emergencies stand out.
+-   Upload failures log at `error`, not `emergency`.
 
 ## [1.5.0] - 2026-06-16
 
 ### Added
 
--   **Replay protection** — the agent signs every outbound request with `X-Notifier-Timestamp`, `X-Notifier-Nonce` and `X-Notifier-Signature` (HMAC-SHA256 over `timestamp\nnonce`, keyed by the SHA-256 hash of the token). Additive and backward-compatible: the server verifies the signature only when present, so un-upgraded servers/agents are unaffected.
--   **`NOTIFIER_TRIGGER_SECRET`** — inbound server→client backup triggers now authenticate against a dedicated trigger secret, with a runtime fallback to `NOTIFIER_BACKUP_CODE` for single-secret installs. This pairs with the control plane storing inbound tokens hashed at rest.
--   **Strong backup ZIP password policy** in `notifier:install` — minimum 16 characters and at least 6 distinct characters; a strong password is auto-generated by default.
+-   Outgoing requests are signed: `X-Notifier-Timestamp`, `X-Notifier-Nonce`, `X-Notifier-Signature` (HMAC-SHA256). Servers that don't check them are unaffected.
+-   `NOTIFIER_TRIGGER_SECRET` for inbound backup triggers. Falls back to `NOTIFIER_BACKUP_CODE`.
+-   `notifier:install` requires a backup password of 16+ characters (6+ distinct) and generates one by default.
 
 ### Security
 
--   Hardened the release workflow (`release.yml`) against unauthorized publishes (tag/branch and permission guards).
+-   `release.yml` refuses unauthorized publishes.
 
 ### Fixed
 
--   Windows ZIP entry-path separator bug in `PhpZipCreator` — archive entry names are normalized to forward slashes so archives built on a Windows client are well-formed and exclusion matching works.
+-   `PhpZipCreator` on Windows writes entry names with forward slashes.
 
 ## [1.4.1] - 2026-06-15
 
 ### Added
 
--   **Configurable cap on rendered announcement banners** - `notifier.announcements.max_visible` (env `NOTIFIER_ANNOUNCEMENTS_MAX_VISIBLE`, default 5). Each render location (the Filament render-hook banner and the `<x-notifier-announcements-notice />` Blade component) shows the **top-N priority-ordered** announcements plus a muted **`+ N dalších oznámení`** overflow line; `0` = unlimited. SPA/custom hosts via `AnnouncementsService::customAnnouncements()` still receive **all** announcements and decide their own display.
+-   `NOTIFIER_ANNOUNCEMENTS_MAX_VISIBLE` (default 5, `0` = unlimited) limits banners per location and adds a `+ N dalších oznámení` line. `customAnnouncements()` still returns all.
 
 ### Changed
 
--   **Announcement validity-window separator is now a plain hyphen `-`** instead of an en-dash `–` (avoids mojibake/odd rendering).
+-   The validity window uses a plain hyphen instead of an en dash.
 
 ## [1.4.0] - 2026-06-15
 
 ### Added
 
--   **Validity-window line in the announcement banner.** Each announcement now renders a muted sub-line showing the period it applies - **`Platí: {od} – {do}`** when the server sends both bounds, or **`Platí od {od} (do odvolání)`** when it is open-ended. The window comes from the wire `starts_at` / `ends_at`; `published_at` is only the publish gate and is never shown. Times are converted to the **host app timezone** (`config('app.timezone')`) and formatted **absolutely** (`j. n. Y H:i`, e.g. `13. 6. 2026 23:12`) so the value is safe to cache for the 15-minute announcement TTL without going stale. The label is derived once at fetch time (`validity_label`, fail-soft - a malformed date is logged and the line is simply omitted) and renders in both the Filament render-hook banner and the `<x-notifier-announcements-notice />` Blade component. Announcements without a start date render exactly as before.
+-   Announcements show their validity window (`Platí: {od} – {do}` or `Platí od {od} (do odvolání)`) in the app timezone. Omitted without a start date.
 
 ## [1.3.0] - 2026-06-14
 
 ### Added
 
--   **Heartbeat / identity manifest.** A new `notifier:heartbeat` command pushes a periodic liveness + identity manifest to the control plane (`POST {NOTIFIER_URL}/heartbeat`, per-repository, same `X-Notifier-Token`), so the server can mark a site **stale after 6 h** of silence. **On by default**; the host app schedules it (recommended `Schedule::command('notifier:heartbeat')->hourly()->onOneServer()`). Disable with `NOTIFIER_HEARTBEAT_ENABLED=false` (the push becomes a no-op).
-    -   The manifest reports the **agent / PHP / Laravel versions**, the **queue connection**, the **enabled feature** map (announcements / backups / heartbeat), **free + total disk bytes** on the storage volume, the **last database & storage backup times**, and the agent's own clock (`reported_at`). The server stamps its own receipt time - the agent never sends it.
-    -   Unlike the fail-open announcements pull, the heartbeat is a **push**: a rejected or unreachable server is logged to the `backup` channel and makes the command exit non-zero, so a host scheduler's failure handling can react.
--   **Last-backup timestamps recorded.** `notifier:database-backup` and `notifier:storage-backup` now record the time of each successful backup (cache keys `notifier.last_database_backup_at` / `notifier.last_storage_backup_at`), which the heartbeat manifest reports to the control plane.
+-   `notifier:heartbeat` sends versions, queue, features, disk space and last backup times to the control plane. Schedule it hourly; turn it off with `NOTIFIER_HEARTBEAT_ENABLED=false`.
+-   The server marks a site stale after 6 h without a heartbeat.
+-   Backup commands record their last successful run for the heartbeat.
 
 ## [1.2.0] - 2026-06-14
 
 ### Added
 
--   **Per-announcement placement.** Each announcement now carries a `dashboard_type` (`filament` | `custom`, default `filament`) and an optional `target`, so the control plane decides where each notice lands instead of one global spot.
-    -   **Filament hosts** route each announcement to the render hook named in its `target`; a null `target` falls to the default `render_hook`. List every position you want to support in the new `render_hooks` config (env `NOTIFIER_ANNOUNCEMENTS_RENDER_HOOKS`, comma-separated) - the default hook is always included, and each hook renders only the announcements that resolve to it.
-    -   **Custom (SPA) hosts** get a new `AnnouncementsService::customAnnouncements(?string $target = null)` helper that returns only `dashboard_type=custom` announcements (optionally for a single `target` element id), so Inertia/Vue/React hosts can mount each notice at its own DOM element. Same fail-open robustness as `activeAnnouncements()`.
--   **Placement keys normalized** on every fetched announcement: `dashboard_type` defaults to `filament` and `target` to `null`, so older servers and existing consumers are fully backward compatible - out of the box (single `render_hook`, no `target`) every announcement still renders at the default hook exactly as before. `custom` announcements are never injected into Filament panels.
+-   Announcements have a `dashboard_type` (`filament` or `custom`) and a `target`.
+-   Filament: each announcement goes to the render hook in `target`. List hooks in `NOTIFIER_ANNOUNCEMENTS_RENDER_HOOKS`.
+-   SPA hosts: `AnnouncementsService::customAnnouncements(?string $target)`.
+-   Older servers and existing setups behave as before.
 
 ## [1.1.0] - 2026-06-11
 
 ### Added
 
--   **Announcement types.** The control plane can now classify announcements (`maintenance` / `outage` / `release` / `notice`); typed announcements render with a small chip label (Údržba / Výpadek / Novinka) in both the Filament banner and the Blade component, plus a `notifier-announcement--type-{type}` CSS class. `notice`, unknown types, and payloads from older servers render exactly as before - fully backward compatible.
--   **`data-announcement-id` attribute** on each rendered announcement (when the server sends `id`) - groundwork for client-side dismissal/deduplication later.
+-   Announcement types (`maintenance`, `outage`, `release`, `notice`) with a label and a `notifier-announcement--type-{type}` CSS class.
+-   `data-announcement-id` on each announcement.
 
 ## [1.0.2] - 2026-06-11
 
 ### Security
 
--   **Failed token attempts on the backup endpoint are now rate-limited.** The throttle middleware ran *after* token verification, so invalid-token requests were never throttled and the `X-Notifier-Token` could be brute-forced at an unlimited rate. Throttling now runs first; the existing limit (10/hour) is unchanged.
--   **The backup endpoint no longer discloses configuration before authentication.** A missing token, an invalid token and a misconfigured server all return the same generic `403` body - previously the endpoint distinguished `401` vs `403` and a misconfigured install returned `500` **including the names of the missing `NOTIFIER_*` env variables**. The real reason is now logged server-side (with caller IP) instead.
--   **Plaintext database dump lifecycle hardened.** The `.sql` dump is `chmod 0600` immediately after creation (no-op on Windows), and is deleted in a `finally` even when ZIP creation throws - previously a failing ZIP step left the unencrypted dump on disk indefinitely.
--   **`notifier:install` now escapes values written to `.env`.** Values are double-quoted with backslash/double-quote escaping, so secrets containing quotes, spaces or backslashes can no longer corrupt the file (the replace-on-`--force` path also switched to `preg_replace_callback` so escaped values survive idempotent re-runs).
-
-### Notes
-
--   Behavioral change for *unauthenticated/misconfigured* callers only: previous `401`/`500` responses are now a uniform `403`. Legitimate (valid-token) requests are unaffected.
+-   The rate limit runs before the token check, so token guessing is throttled (10/hour).
+-   The backup endpoint returns the same `403` for a missing token, a wrong token and a misconfiguration. Details go to the log.
+-   The plain `.sql` dump is `0600` and deleted even when zipping fails.
+-   `notifier:install` quotes and escapes values written to `.env`.
 
 ## [1.0.1] - 2026-06-10
 
 ### Added
 
--   **`conflict` against `devuni/notifier-package`.** Both packages share the `Devuni\Notifier\` namespace and provider, so installing them side by side would corrupt class resolution silently. Composer now refuses the combination with an explicit error - migrate with `composer remove devuni/notifier-package` first (see README → *Migrating from devuni/notifier-package*).
--   **README migration guide** from `devuni/notifier-package` (one-step swap, version-numbering note, announcements opt-out hint).
+-   Composer `conflict` with `devuni/notifier-package`.
+-   README: migrating from `devuni/notifier-package`.
 
 ### Changed
 
--   **`NotifierApiClient` now sends `Accept: application/json`**, so server-side `abort()` errors come back as compact JSON instead of HTML error pages ending up in the logs.
--   **Announcements `failure_cache_ttl` default raised 60 s → 300 s** - a down or not-yet-deployed server endpoint is retried (and logged) at most once per 5 minutes per site instead of once per minute.
+-   `NotifierApiClient` sends `Accept: application/json`.
+-   Announcement `failure_cache_ttl` default raised from 60 s to 300 s.
 
 ### Tests
 
--   New transport test pinning the **redirects-disabled invariant** on token-bearing requests (mutation-verified: removing `allow_redirects => false` fails the test), plus an `Accept: application/json` assertion.
--   Announcement fixtures now use a real server severity value (`high`); the previous `warning` is not a value the server can send (`critical/high/medium/low/info`).
+-   Token-bearing requests are tested never to follow redirects.
+-   Announcement fixtures use real severity values.
 
 ## [1.0.0] - 2026-06-10
 
-The first official release of **`devuni/notifier-agent`** - the client agent of the [Devuni Notifier](https://notifier.devuni.cz) control plane, installed in each Laravel app. It pushes telemetry to the platform (encrypted backups) and pulls instructions from it (announcements), with more capabilities to come.
+First release of `devuni/notifier-agent`, the Laravel client for the [Devuni Notifier](https://notifier.devuni.cz) control plane. It replaces `devuni/notifier-package` 2.8.0.
 
 ### Added
 
--   **Encrypted database & storage backups.** `notifier:database-backup` / `notifier:storage-backup` create AES-256 encrypted ZIPs (7z CLI or PHP zip) and ship them to the central server via a chunked HTTPS upload protocol (init → chunks with per-chunk SHA-256 + retry → finalize with async status polling). Supports **MySQL, MariaDB, PostgreSQL and YugabyteDB**; table/file exclusions; queue offloading for HTTP-triggered backups (`NOTIFIER_QUEUE_CONNECTION`).
--   **Announcements.** The agent pulls this site's active maintenance/announcement notices from the central server (`GET {NOTIFIER_URL}/announcements`, per-repository, cached, fail-open - a down server can never break the host dashboard). **On by default**; costs nothing until `NOTIFIER_URL` is configured.
-    -   **Filament auto-injection** - on hosts running Filament (v3/v4/v5) the notices auto-inject as a styled banner into every panel page via a render hook (`NOTIFIER_ANNOUNCEMENTS_FILAMENT[_HOOK]`), registered only when Filament is installed.
-    -   **`<x-notifier-announcements-notice />`** Blade component for Blade hosts; Inertia/Vue/React hosts render `AnnouncementsService::activeAnnouncements()` themselves.
--   **Unified `NotifierApiClient` transport.** Every request to the control plane goes through a single client that enforces the security invariants in one place: **HTTPS-only** (the `X-Notifier-Token` secret is never sent over cleartext), **redirects disabled** on token-bearing requests, uniform auth header, base-URL resolution and JSON error formatting. New agent capabilities inherit these guarantees automatically.
--   **Setup & diagnostics.** `notifier:install` (interactive `.env` wizard) and `notifier:check` (validates env, database, dump binary, zip strategy, queue config and server reachability).
--   **HTTP trigger endpoint.** `POST {prefix}/backup` (default `api/notifier/backup`, token-authenticated via `hash_equals`, rate-limited) so the central server or an external scheduler can trigger backups remotely.
+-   `notifier:database-backup` and `notifier:storage-backup`: AES-256 ZIPs (7z or PHP zip), chunked upload with SHA-256 per chunk.
+-   MySQL, MariaDB, PostgreSQL and YugabyteDB. Table and file exclusions. Queue offloading with `NOTIFIER_QUEUE_CONNECTION`.
+-   Announcements from the control plane, cached and fail-open: Filament banner, `<x-notifier-announcements-notice />` or `activeAnnouncements()`.
+-   `NotifierApiClient`: HTTPS only, no redirects with the token.
+-   `notifier:install` and `notifier:check`.
+-   `POST {prefix}/backup` trigger endpoint, token-checked and rate-limited.
 
 ### Security
 
--   ZIP passwords are passed via stdin (never argv), archives are created with `0600` permissions and deleted after upload.
--   Per-chunk and whole-file SHA-256 verification; server-supplied `status_url` is origin-validated before the token is attached; server-supplied failure reasons are sanitized before logging.
+-   ZIP password via stdin. Archives are `0600` and deleted after upload.
+-   SHA-256 per chunk and per file. `status_url` origin is checked. Server messages are sanitized.
 
 ### Notes
 
--   The PHP namespace is **`Devuni\Notifier\`** and the env surface uses the established `NOTIFIER_*` keys.
--   Built on the codebase previously published as `devuni/notifier-package` (2.x). That package is superseded by this one: its `v2.8.0` is the terminal release and all further development happens here. Migration is a one-step `composer remove devuni/notifier-package && composer require devuni/notifier-agent`.
+-   Namespace `Devuni\Notifier\`, env keys `NOTIFIER_*`.
+-   Migrate with `composer remove devuni/notifier-package && composer require devuni/notifier-agent`.
 
 [Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.9.0...HEAD
 [1.9.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.8.0...v1.9.0
