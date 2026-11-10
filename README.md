@@ -233,22 +233,6 @@ $service->customAnnouncements('spa-banner');   // dashboard_type "custom", for o
 | `NOTIFIER_ANNOUNCEMENTS_FILAMENT_HOOK`     | `panels::content.start` | Default render hook.                                   |
 | `NOTIFIER_ANNOUNCEMENTS_RENDER_HOOKS`      | the default hook        | Comma-separated hooks an announcement's `target` may use. |
 
-## Migrating from `devuni/notifier-package`
-
-```bash
-composer remove devuni/notifier-package
-```
-
-```bash
-composer require devuni/notifier-agent
-```
-
--   Same namespace, env keys, commands, config and routes.
--   Don't install both. Composer refuses it.
--   Versions restart at 1.0.0 and include everything from 2.8.0.
--   Old `BACKUP_CODE`, `BACKUP_URL` and `BACKUP_ZIP_PASSWORD` still work as fallbacks.
--   From 2.7.x or older: announcements are on by default. `NOTIFIER_ANNOUNCEMENTS_ENABLED=false` turns them off.
-
 ## Security
 
 -   AES-256 archives with `0600` permissions, deleted after upload.
