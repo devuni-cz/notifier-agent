@@ -12,10 +12,10 @@ use RecursiveIteratorIterator;
 use RuntimeException;
 use ZipArchive;
 
-final class PhpZipCreator implements ZipCreatorInterface
+final readonly class PhpZipCreator implements ZipCreatorInterface
 {
     public function __construct(
-        private readonly NotifierLoggerService $notifierLogger,
+        private NotifierLoggerService $notifierLogger,
     ) {}
 
     public static function isAvailable(): bool
@@ -109,12 +109,6 @@ final class PhpZipCreator implements ZipCreatorInterface
 
     private function isExcluded(string $relativePath, array $excludedFiles): bool
     {
-        foreach ($excludedFiles as $skip) {
-            if ($relativePath === $skip || str_starts_with($relativePath, $skip.'/')) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any($excludedFiles, fn ($skip): bool => $relativePath === $skip || str_starts_with($relativePath, $skip.'/'));
     }
 }

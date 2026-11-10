@@ -20,17 +20,17 @@ use Throwable;
  * request on every page load, and failures are swallowed (returning an empty
  * list) so a down/slow announcement server can never break the dashboard.
  */
-final class AnnouncementsService
+final readonly class AnnouncementsService
 {
     /**
      * Item key carrying the display-ready validity window line (string|null),
      * computed once at fetch time and cached with the item so the views stay dumb.
      */
-    public const VALIDITY_LABEL_KEY = 'validity_label';
+    public const string VALIDITY_LABEL_KEY = 'validity_label';
 
     public function __construct(
-        private readonly NotifierApiClient $api,
-        private readonly NotifierLoggerService $notifierLogger,
+        private NotifierApiClient $api,
+        private NotifierLoggerService $notifierLogger,
     ) {}
 
     /**

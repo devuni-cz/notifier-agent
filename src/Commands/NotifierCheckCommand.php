@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Devuni\Notifier\Commands;
 
+use Devuni\Notifier\Enums\BackupTypeEnum;
+use Devuni\Notifier\Enums\SealStatusEnum;
 use Devuni\Notifier\Interfaces\DatabaseDumperInterface;
+use Devuni\Notifier\Interfaces\ZipCreatorInterface;
 use Devuni\Notifier\Services\Database\LazyDatabaseDumper;
 use Devuni\Notifier\Services\Database\MysqlDumper;
 use Devuni\Notifier\Services\Database\PostgresDumper;
 use Devuni\Notifier\Services\NotifierConfigService;
 use Devuni\Notifier\Services\NotifierLoggerService;
+use Devuni\Notifier\Services\Zip\BackupSeal;
 use Devuni\Notifier\Services\Zip\CliZipCreator;
 use Devuni\Notifier\Services\Zip\PhpZipCreator;
 use Devuni\Notifier\Traits\DisplayHelperTrait;
@@ -18,6 +22,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use RuntimeException;
 use Throwable;
 
 final class NotifierCheckCommand extends Command
@@ -39,6 +44,7 @@ final class NotifierCheckCommand extends Command
         $this->checkStorageDirectories();
         $this->checkDatabaseDumpTool();
         $this->checkZipAvailability();
+        $this->checkBackupSeal();
         $this->checkLoggingChannel($notifierLogger);
         $this->checkQueueConfiguration();
         $this->checkBackupUrlReachability();
@@ -59,7 +65,7 @@ final class NotifierCheckCommand extends Command
 
         $missing = $configService->checkEnvironment();
 
-        if (empty($missing)) {
+        if ($missing === []) {
             $this->passLine('All required environment variables are configured');
             $this->showConfiguredValues();
             $this->record('Environment variables', self::STATUS_PASS);
@@ -187,6 +193,16 @@ final class NotifierCheckCommand extends Command
     }
 
     /**
+     * The dumper bound in the container, typed by its contract: the service
+     * provider binds a LazyDatabaseDumper, but the host app (or a test) may
+     * rebind the interface to any other implementation.
+     */
+    private function boundDumper(): DatabaseDumperInterface
+    {
+        return app(DatabaseDumperInterface::class);
+    }
+
+    /**
      * Check if the right dump binary is available for the configured driver.
      */
     private function checkDatabaseDumpTool(): void
@@ -199,7 +215,7 @@ final class NotifierCheckCommand extends Command
         $this->detail('Connection', "<fg=cyan>{$connection}</> <fg=gray>(driver: {$driver})</>");
 
         try {
-            $dumper = app(DatabaseDumperInterface::class);
+            $dumper = $this->boundDumper();
 
             // Unwrap LazyDatabaseDumper to expose the concrete implementation
             if ($dumper instanceof LazyDatabaseDumper) {
@@ -274,6 +290,51 @@ final class NotifierCheckCommand extends Command
         }
 
         $this->record('ZIP archive tools', $status);
+    }
+
+    /**
+     * Seal a small archive with the tools this host would really use, and check
+     * that it verifies. The first sign of a sealing problem should be this report,
+     * not a refused restore during an incident.
+     */
+    private function checkBackupSeal(): void
+    {
+        $this->section('backup seal');
+
+        $password = (string) config('notifier.backup_zip_password');
+
+        if ($password === '' || ! config('notifier.seal_backups', true)) {
+            $this->warnLine('Backups are not being sealed, so restoring them needs manual approval');
+            $this->hint('Set NOTIFIER_BACKUP_PASSWORD and leave NOTIFIER_SEAL_BACKUPS enabled');
+            $this->record('Backup seal', self::STATUS_WARN);
+
+            return;
+        }
+
+        $directory = storage_path('app/private/notifier-check-'.bin2hex(random_bytes(4)));
+        $seal = new BackupSeal;
+
+        try {
+            File::ensureDirectoryExists($directory);
+            File::put($directory.'/probe.txt', 'notifier seal probe');
+            app(ZipCreatorInterface::class)->create($directory.'/probe.txt', $directory.'/probe.zip', $password, []);
+
+            $url = (string) config('notifier.backup_url');
+            $seal->seal($directory.'/probe.zip', BackupTypeEnum::Database, $password, $url);
+
+            if ($seal->inspect($directory.'/probe.zip', BackupTypeEnum::Database, $password, $url)->status !== SealStatusEnum::Ok) {
+                throw new RuntimeException('The sealed probe archive did not verify.');
+            }
+
+            $this->passLine('A test archive was sealed and verified');
+            $this->record('Backup seal', self::STATUS_PASS);
+        } catch (Throwable $e) {
+            $this->failLine('Backups cannot be sealed on this host');
+            $this->hint("Error: {$e->getMessage()}");
+            $this->record('Backup seal', self::STATUS_FAIL);
+        } finally {
+            File::deleteDirectory($directory);
+        }
     }
 
     /**

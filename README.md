@@ -93,12 +93,23 @@ php artisan notifier:storage-restore           # apply the newest storage backup
 
 Both commands support `--list`, `--id=`, `--dry-run` (download + verify without applying) and require `--force` in production; the database restore additionally asks you to type the database name to confirm and dumps the current database to a pre-restore snapshot first (skip with `--no-snapshot`). Storage restore is additive - it overwrites files with matching paths but never deletes anything.
 
+**Sealed backups.** Backups taken with a password carry a seal in the ZIP comment, keyed from `NOTIFIER_BACKUP_PASSWORD`. A restore checks it before extracting anything and prints the authenticated backup type and date, also under `--force`. `--dry-run` authenticates and extracts the archive just like a real restore and stops before applying it, so a scheduled `--dry-run` is a regular test that backups can be read back. It does not run the database import.
+
+- Without `--id`, the newest backup is refused if it was sealed more than 35 days ago. Name the backup with `--id=` if it really is the one you want.
+- An archive that cannot be authenticated is refused: every backup taken before sealing was introduced, one made on a host with no password, or one whose seal does not match. If you trust that exact file, re-run with the `--id=` and `--accept-unverified=` values the refusal prints. Neither `--force` nor any config value can replace this approval.
+- An approved storage restore without a valid seal is not applied. The files go to a private directory under `storage/app/notifier-restore/`, and you copy what you need and delete the directory.
+- A backup sealed as the other type (database vs. storage) is never restored.
+
+Upgrade production agents before staging, then run one manual backup and a `--dry-run` of each type per host. `notifier:check` tests sealing with the tools the host really uses, and the heartbeat reports `sealed_backups` for the most recent backup. `NOTIFIER_SEAL_BACKUPS=false` stops new backups from being sealed; it never relaxes a restore.
+
+A restore stops downloading once the archive goes over `NOTIFIER_RESTORE_MAX_DOWNLOAD_BYTES` (default 20 GiB, the largest backup the control plane accepts; `0` turns the limit off), so an oversized response stops at that size. The limit does not check free disk space.
+
 Restore is authenticated with a **separate** `NOTIFIER_RESTORE_TOKEN` (issued per repository on the control plane) - never the backup code - so leaking the credential that *uploads* backups cannot be used to *download* them. Without the token the restore commands are disabled. `notifier:install` offers to configure it, and `notifier:check` warns when it is missing.
 
 **Bootstrapping a fresh deployment:** deploy → configure `.env` → run both restore commands (with `--force` on production) → done. Three things to know:
 
-- Copy the **original** `NOTIFIER_BACKUP_PASSWORD` from the old deployment - every archive on the control plane is encrypted with it, so a freshly generated password cannot decrypt anything. Set `NOTIFIER_RESTORE_TOKEN` alongside it.
-- Point the new deployment at the **same** repository `NOTIFIER_URL` as the old one - backup history belongs to the repository, a new repository id has nothing to pull.
+- Copy the **original** `NOTIFIER_BACKUP_PASSWORD` from the old deployment - every archive on the control plane is encrypted and sealed with it, so a freshly generated password can neither decrypt nor authenticate anything. Set `NOTIFIER_RESTORE_TOKEN` alongside it.
+- Point the new deployment at the **same** repository `NOTIFIER_URL` as the old one - backup history belongs to the repository and each seal names it, so a new repository id has nothing to pull and restoring across repositories needs the same per-file approval as above.
 - Don't run the backup commands before the site has data. The control plane rejects near-empty uploads ("Backup too small"), so a database backup of a freshly migrated, empty database is expected to fail - restore first, and let the scheduled backups (the control plane's triggers, or your cron in self-scheduled mode) take over once there is something to back up.
 
 ### HTTP API
@@ -183,7 +194,7 @@ NOTIFIER_BACKUP_PASSWORD=...                                    # ZIP password
 
 Optional credentials: `NOTIFIER_RESTORE_TOKEN` (enables the `notifier:*-restore` commands; issued per repository on the control plane), `NOTIFIER_TRIGGER_SECRET` (dedicated inbound trigger secret - without it the backup code doubles as the trigger secret; the control plane must be configured with the same value).
 
-Other options: `NOTIFIER_LOGGING_CHANNEL`, `NOTIFIER_ROUTES_ENABLED`, `NOTIFIER_ROUTE_PREFIX`, `NOTIFIER_ZIP_STRATEGY` (`auto`/`cli`/`php`), `NOTIFIER_CHUNK_SIZE`, `NOTIFIER_MIN_STORAGE_BACKUP_BYTES`, `NOTIFIER_QUEUE_CONNECTION`, `NOTIFIER_DATABASE_CONNECTION`, `NOTIFIER_POSTGRES_DUMP_BINARY`, `NOTIFIER_POSTGRES_SCHEMA`, `NOTIFIER_HEARTBEAT_ENABLED`. See [`config/notifier.php`](config/notifier.php) for defaults and descriptions.
+Other options: `NOTIFIER_LOGGING_CHANNEL`, `NOTIFIER_ROUTES_ENABLED`, `NOTIFIER_ROUTE_PREFIX`, `NOTIFIER_ZIP_STRATEGY` (`auto`/`cli`/`php`), `NOTIFIER_SEAL_BACKUPS`, `NOTIFIER_CHUNK_SIZE`, `NOTIFIER_MIN_STORAGE_BACKUP_BYTES`, `NOTIFIER_QUEUE_CONNECTION`, `NOTIFIER_DATABASE_CONNECTION`, `NOTIFIER_POSTGRES_DUMP_BINARY`, `NOTIFIER_POSTGRES_SCHEMA`, `NOTIFIER_HEARTBEAT_ENABLED`. See [`config/notifier.php`](config/notifier.php) for defaults and descriptions.
 
 ### Database engine
 

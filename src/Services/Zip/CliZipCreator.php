@@ -12,10 +12,10 @@ use RecursiveIteratorIterator;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
-final class CliZipCreator implements ZipCreatorInterface
+final readonly class CliZipCreator implements ZipCreatorInterface
 {
     public function __construct(
-        private readonly NotifierLoggerService $notifierLogger,
+        private NotifierLoggerService $notifierLogger,
     ) {}
 
     public static function isAvailable(): bool
@@ -103,7 +103,7 @@ final class CliZipCreator implements ZipCreatorInterface
                     ],
                 );
 
-                return (new PhpZipCreator($this->notifierLogger))
+                return new PhpZipCreator($this->notifierLogger)
                     ->create($sourcePath, $zipPath, $password, $excludedFiles);
             }
 

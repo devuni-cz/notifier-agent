@@ -10,18 +10,18 @@ use Devuni\Notifier\Services\NotifierLoggerService;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
-final class VerifyNotifierTokenMiddleware
+final readonly class VerifyNotifierTokenMiddleware
 {
     public function __construct(
-        private readonly NotifierConfigService $configService,
-        private readonly NotifierLoggerService $notifierLogger,
+        private NotifierConfigService $configService,
+        private NotifierLoggerService $notifierLogger,
     ) {}
 
     public function handle(Request $request, Closure $next): Response
     {
         $missingVariables = $this->configService->checkEnvironment();
 
-        if (! empty($missingVariables)) {
+        if ($missingVariables !== []) {
             $this->notifierLogger->get()->error('Backup request rejected: server configuration incomplete.', [
                 'missing_variables' => $missingVariables,
             ]);

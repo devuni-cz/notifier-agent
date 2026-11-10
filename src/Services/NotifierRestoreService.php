@@ -7,8 +7,11 @@ namespace Devuni\Notifier\Services;
 use Devuni\Notifier\Enums\BackupTypeEnum;
 use Devuni\Notifier\Interfaces\DatabaseImporterInterface;
 use Devuni\Notifier\Interfaces\ZipExtractorInterface;
+use Devuni\Notifier\Services\Zip\BackupSeal;
+use Devuni\Notifier\Services\Zip\PhpZipExtractor;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
+use Symfony\Component\Finder\Finder;
 
 /**
  * Pulls this site's own backups back down from the control plane.
@@ -21,13 +24,15 @@ use RuntimeException;
  * This service only fetches and applies. Confirmation, production guards and
  * safety snapshots are the caller's (command's) responsibility.
  */
-final class NotifierRestoreService
+final readonly class NotifierRestoreService
 {
     public function __construct(
-        private readonly NotifierApiClient $api,
-        private readonly NotifierLoggerService $notifierLogger,
-        private readonly ZipExtractorInterface $zipExtractor,
-        private readonly DatabaseImporterInterface $databaseImporter,
+        private NotifierApiClient $api,
+        private NotifierLoggerService $notifierLogger,
+        private ZipExtractorInterface $zipExtractor,
+        private DatabaseImporterInterface $databaseImporter,
+        private PhpZipExtractor $phpZipExtractor,
+        private BackupSeal $seal,
     ) {}
 
     /**
@@ -93,10 +98,10 @@ final class NotifierRestoreService
             $backups[] = [
                 'id' => $id,
                 'type' => is_string($row['type'] ?? null) ? $row['type'] : '',
-                'name' => is_string($row['name'] ?? null) ? $row['name'] : '',
+                'name' => $this->printableName($row['name'] ?? null),
                 'size' => isset($row['size']) && is_numeric($row['size']) ? (int) $row['size'] : null,
                 'checksum' => $this->normalizeChecksum($row['checksum'] ?? null),
-                'created_at' => is_string($row['created_at'] ?? null) ? $row['created_at'] : null,
+                'created_at' => $this->printableDate($row['created_at'] ?? null),
             ];
         }
 
@@ -134,13 +139,12 @@ final class NotifierRestoreService
     /**
      * Download one backup archive to a local path.
      *
-     * When $expectedChecksum is a SHA-256 the server vouched for, the downloaded
-     * bytes are hashed and compared before the file is accepted. This is the
-     * archive's authenticity check against a tampered / substituted download: a
-     * hostile or hijacked control plane cannot feed the importer a dump whose
-     * hash the server itself never recorded. A null checksum means the server
-     * had none to give (pre-checksum backup) - the download proceeds, but the
-     * encryption + SQL-directive guards downstream remain the last line.
+     * When $expectedChecksum is a SHA-256 the server reported, the downloaded
+     * bytes are hashed and compared before the file is accepted. This catches a
+     * transfer that went wrong; it says nothing about where the archive came
+     * from, because the same server supplies the checksum and the file. That is
+     * what verify() is for. A null checksum means the server had none to give
+     * (pre-checksum backup).
      *
      * @param  string|null  $expectedChecksum  Lower-case SHA-256 hex, or null when unavailable.
      *
@@ -186,42 +190,78 @@ final class NotifierRestoreService
     }
 
     /**
-     * Extract a downloaded archive into a working directory.
+     * A new private directory for one restore run. A fresh name every time means
+     * nothing from an interrupted or concurrent run can end up in this one.
+     *
+     * @throws RuntimeException When it cannot be created.
+     */
+    public function workDirectory(): string
+    {
+        $root = storage_path('app/notifier-restore');
+
+        File::ensureDirectoryExists($root);
+        $this->removeAbandonedRuns($root);
+
+        $path = $root.'/run-'.bin2hex(random_bytes(8));
+
+        if (! @mkdir($path, 0700)) {
+            throw new RuntimeException('Could not create the restore working directory: '.$path);
+        }
+
+        return $path;
+    }
+
+    /**
+     * Apply the restore policy to a downloaded file: its seal, its type, its age
+     * and any approval the operator gave for this exact file.
+     *
+     * @param  bool  $explicitId  Whether the operator chose this backup with --id.
+     * @param  string|null  $acceptedDigest  The value of --accept-unverified.
+     *
+     * @throws RuntimeException When the file may not be restored.
+     */
+    public function verify(BackupTypeEnum $type, string $archivePath, int $backupId, bool $explicitId, ?string $acceptedDigest): VerifiedArchive
+    {
+        return VerifiedArchive::establish(
+            path: $archivePath,
+            type: $type,
+            backupId: $backupId,
+            explicitId: $explicitId,
+            acceptedDigest: $acceptedDigest,
+            password: (string) config('notifier.backup_zip_password'),
+            backupUrl: (string) config('notifier.backup_url'),
+            seal: $this->seal,
+            now: now(),
+        );
+    }
+
+    /**
+     * Extract a verified archive into a working directory.
      *
      * A database backup taken on a password-less install is a BARE .sql, not a
-     * ZIP (storage backups are always zipped). Detect a non-ZIP download by its
-     * magic bytes and handle it directly rather than feeding it to the zip
-     * extractor (which would throw "unable to open archive"). When a password IS
-     * configured every backup must be an encrypted ZIP, so a non-ZIP download can
-     * only be a corrupted/substituted archive and is refused - the encrypted-ZIP
-     * authenticity guarantee must not be silently downgraded to "import raw
-     * server bytes".
+     * ZIP, and is staged directly. An archive that could not be authenticated
+     * goes through the PHP extractor whenever it is available, so one reader both
+     * checks the entries and writes them.
      *
      * @return string Path to the extraction directory.
      */
-    public function extract(string $archivePath, string $workingDirectory): string
+    public function extract(VerifiedArchive $archive, string $workingDirectory): string
     {
-        $password = (string) config('notifier.backup_zip_password');
-
         File::ensureDirectoryExists($workingDirectory);
 
-        if (! $this->isZipArchive($archivePath)) {
-            if ($password !== '') {
-                throw new RuntimeException(
-                    'Refusing to restore: a backup password is configured, so every backup must be an '
-                    .'encrypted ZIP, but the downloaded file is not a ZIP archive. It was corrupted or substituted.'
-                );
-            }
-
-            // No password: the only non-ZIP this package produces is a bare .sql
-            // database dump. Stage it so importDatabase()'s glob('*.sql') finds
-            // exactly one dump; SqlDirectiveGuard still runs inside the importer.
-            File::copy($archivePath, $workingDirectory.'/backup.sql');
+        if (! $archive->isZip) {
+            // Stage it so importDatabase()'s glob('*.sql') finds exactly one dump;
+            // SqlDirectiveGuard still runs inside the importer.
+            File::copy($archive->path, $workingDirectory.'/backup.sql');
 
             return $workingDirectory;
         }
 
-        $this->zipExtractor->extract($archivePath, $workingDirectory, $password);
+        $extractor = ! $archive->sealed && PhpZipExtractor::isAvailable()
+            ? $this->phpZipExtractor
+            : $this->zipExtractor;
+
+        $extractor->extract($archive->path, $workingDirectory, (string) config('notifier.backup_zip_password'), $archive->sealed);
 
         return $workingDirectory;
     }
@@ -233,17 +273,18 @@ final class NotifierRestoreService
      */
     public function importDatabase(string $extractedDirectory): void
     {
-        $dumps = glob($extractedDirectory.'/*.sql') ?: [];
+        $this->databaseImporter->import($this->singleDump($extractedDirectory));
+    }
 
-        if ($dumps === []) {
-            throw new RuntimeException('No .sql dump found in the extracted archive.');
-        }
-
-        if (count($dumps) > 1) {
-            throw new RuntimeException('Expected exactly one .sql dump, found '.count($dumps).'.');
-        }
-
-        $this->databaseImporter->import($dumps[0]);
+    /**
+     * Run the checks importDatabase() applies, without touching the database, so
+     * a dry run cannot report success for a dump the real restore would refuse.
+     *
+     * @throws RuntimeException When the dump is missing, ambiguous or refused.
+     */
+    public function inspectDatabase(string $extractedDirectory): void
+    {
+        $this->databaseImporter->inspect($this->singleDump($extractedDirectory));
     }
 
     /**
@@ -271,24 +312,15 @@ final class NotifierRestoreService
     {
         File::ensureDirectoryExists($storagePath);
 
-        // $hidden = true is load-bearing: allFiles() skips dotfiles by default, which
-        // would silently drop legitimate dotfiles from the backup AND make the
-        // .htaccess/.htpasswd/.user.ini guard below unreachable dead code. Every
-        // entry the archive carries must be seen so it is either validated+restored
-        // or rejected.
-        $files = File::allFiles($extractedDirectory, true);
-
-        // The archive is server-controlled: it is written into storage/app/public,
-        // which the web server serves. Validate EVERY entry before writing anything,
-        // so a single .php/.htaccess in the archive aborts the restore instead of
-        // dropping a webshell into a live, web-reachable directory.
-        foreach ($files as $file) {
-            $this->assertSafeStorageEntry($file->getRelativePathname());
-        }
+        // It is written into storage/app/public, which the web server serves.
+        // Validate EVERY entry before writing anything, so a single .php/.htaccess
+        // in the archive aborts the restore instead of dropping code into a live,
+        // web-reachable directory.
+        $this->assertStorageEntriesSafe($extractedDirectory);
 
         $written = 0;
 
-        foreach ($files as $file) {
+        foreach ($this->storageEntries($extractedDirectory) as $file) {
             $relative = $file->getRelativePathname();
             $target = mb_rtrim($storagePath, '/').'/'.$relative;
 
@@ -302,21 +334,105 @@ final class NotifierRestoreService
     }
 
     /**
-     * Peek at the first bytes to decide whether a download is a ZIP archive.
-     * A pg_dump/mysqldump plaintext dump never begins with the "PK" signature.
+     * Move an approved but unauthenticated storage restore into a private
+     * directory instead of the web-served one. Nothing is published until a
+     * person has looked at it and copied what is needed.
+     *
+     * @return string The directory the files are in.
+     *
+     * @throws RuntimeException When an entry is unsafe or the files cannot be moved.
      */
-    private function isZipArchive(string $path): bool
+    public function quarantineStorage(string $extractedDirectory, int $backupId): string
     {
-        $handle = @fopen($path, 'rb');
+        $this->assertStorageEntriesSafe($extractedDirectory);
 
-        if ($handle === false) {
-            return false;
+        $target = storage_path('app/notifier-restore/unverified-storage-'.$backupId.'-'.date('Ymd-His'));
+
+        File::ensureDirectoryExists(dirname($target));
+
+        if (! File::moveDirectory($extractedDirectory, $target)) {
+            throw new RuntimeException('Could not move the extracted files to '.$target.'.');
         }
 
-        $magic = fread($handle, 4);
-        fclose($handle);
+        // (@ - chmod is a no-op on Windows.)
+        @chmod($target, 0700);
 
-        return in_array($magic, ["PK\x03\x04", "PK\x05\x06", "PK\x07\x08"], true);
+        return $target;
+    }
+
+    /**
+     * Refuse an extracted tree that holds anything unsafe for a web-served
+     * directory. Public so a dry run reports what a real restore would refuse.
+     *
+     * @throws RuntimeException When an entry is unsafe to write.
+     */
+    public function assertStorageEntriesSafe(string $extractedDirectory): void
+    {
+        foreach ($this->storageEntries($extractedDirectory) as $file) {
+            $this->assertSafeStorageEntry($file->getRelativePathname());
+        }
+    }
+
+    /**
+     * The one .sql dump a database backup extracts to.
+     *
+     * @throws RuntimeException When the directory does not hold exactly one dump.
+     */
+    private function singleDump(string $extractedDirectory): string
+    {
+        $dumps = glob($extractedDirectory.'/*.sql') ?: [];
+
+        if ($dumps === []) {
+            throw new RuntimeException('No .sql dump found in the extracted archive.');
+        }
+
+        if (count($dumps) > 1) {
+            throw new RuntimeException('Expected exactly one .sql dump, found '.count($dumps).'.');
+        }
+
+        return $dumps[0];
+    }
+
+    /**
+     * Every file in an extracted tree, including dotfiles and version-control
+     * directories: an entry left out here would be neither checked nor restored.
+     */
+    private function storageEntries(string $directory): Finder
+    {
+        return Finder::create()->files()->ignoreDotFiles(false)->ignoreVCS(false)->in($directory);
+    }
+
+    /**
+     * A run killed outright never reaches its cleanup and can leave a plaintext
+     * dump behind. A day is far longer than any live run takes.
+     */
+    private function removeAbandonedRuns(string $root): void
+    {
+        $cutoff = now()->subDay()->getTimestamp();
+
+        foreach (File::glob($root.'/run-*') ?: [] as $directory) {
+            if (File::lastModified($directory) < $cutoff) {
+                File::deleteDirectory($directory);
+            }
+        }
+    }
+
+    /**
+     * Backup names and dates come from the server and go straight to the
+     * terminal, so only plain characters get through.
+     */
+    private function printableName(mixed $value): string
+    {
+        if (! is_string($value)) {
+            return '';
+        }
+
+        return (string) preg_replace('/[^A-Za-z0-9._ -]/', '_', mb_substr($value, 0, 200));
+    }
+
+    private function printableDate(mixed $value): ?string
+    {
+        return is_string($value) && preg_match('/\A[0-9TZ:.+ -]{1,40}\z/', $value) === 1 ? $value : null;
     }
 
     /**
@@ -334,13 +450,12 @@ final class NotifierRestoreService
     }
 
     /**
-     * Verify the downloaded archive against the SHA-256 the server vouched for.
+     * Verify the downloaded archive against the SHA-256 the server reported.
      *
      * The expected hash is taken from the backup listing ($expected); the
      * download response also carries it in a header ($headerChecksum) as a
      * second copy. If both are present they must agree, and the file must hash
-     * to that value. A wrong hash deletes the file and aborts - the importer
-     * never sees an archive whose provenance the server does not confirm.
+     * to that value. A wrong hash deletes the file and aborts.
      *
      * @throws RuntimeException When the archive fails verification.
      */
@@ -399,7 +514,7 @@ final class NotifierRestoreService
             throw new RuntimeException('Refusing to restore: backup contains a server-override file ("'.$relativePath.'").');
         }
 
-        $extension = mb_strtolower((string) pathinfo($basename, PATHINFO_EXTENSION));
+        $extension = mb_strtolower(pathinfo($basename, PATHINFO_EXTENSION));
 
         $executable = [
             'php', 'php3', 'php4', 'php5', 'php6', 'php7', 'php8', 'phps', 'pht', 'phtm', 'phtml', 'phar',

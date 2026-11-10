@@ -6,10 +6,13 @@ namespace Devuni\Notifier\Commands;
 
 use Devuni\Notifier\Enums\BackupTypeEnum;
 use Devuni\Notifier\Services\NotifierRestoreService;
+use Devuni\Notifier\Services\VerifiedArchive;
 use Devuni\Notifier\Traits\DisplayHelperTrait;
 use Devuni\Notifier\Traits\RendersReportTrait;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
+use RuntimeException;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 use Throwable;
 
 final class NotifierStorageRestoreCommand extends Command
@@ -21,7 +24,8 @@ final class NotifierStorageRestoreCommand extends Command
         {--id= : Restore this specific backup id instead of the newest}
         {--list : Only list the available storage backups and exit}
         {--dry-run : Download and verify the archive, but do not write any files}
-        {--force : Skip the interactive confirmation (required in production)}';
+        {--force : Skip the interactive confirmation (required in production)}
+        {--accept-unverified= : Extract one archive that cannot be authenticated to a private directory, named by the SHA-256 the refusal prints (needs --id)}';
 
     protected $description = 'Download the latest storage backup from the Notifier server and restore it';
 
@@ -36,7 +40,7 @@ final class NotifierStorageRestoreCommand extends Command
 
             $backup = $restore->resolve(BackupTypeEnum::Storage, $this->intOption('id'));
         } catch (Throwable $e) {
-            $this->failLine($e->getMessage());
+            $this->failLine(OutputFormatter::escape($e->getMessage()));
 
             return self::FAILURE;
         }
@@ -49,24 +53,46 @@ final class NotifierStorageRestoreCommand extends Command
 
         // A dry run never writes to storage, so it must not be blocked by the
         // production gate (which guards the destructive path) nor prompt.
-        if (! $this->option('dry-run') && ! $this->confirmRestore($storagePath)) {
+        if (! $this->option('dry-run') && ! $this->allowedInThisEnvironment()) {
             return self::FAILURE;
         }
 
-        $workDirectory = storage_path('app/notifier-restore/storage-'.$backup['id']);
-        $archivePath = $workDirectory.'/archive.zip';
+        $workDirectory = null;
 
         try {
+            $workDirectory = $restore->workDirectory();
+            $archivePath = $workDirectory.'/archive.zip';
+
             $this->section('Download');
             $restore->download($backup['id'], $archivePath, $backup['checksum'] ?? null);
             $this->passLine('Archive downloaded');
 
+            $this->section('Verify');
+            $archive = $restore->verify(BackupTypeEnum::Storage, $archivePath, $backup['id'], $this->option('id') !== null, $this->option('accept-unverified'));
+            $this->reportProvenance($archive);
+
+            // After verification, so what the operator confirms is authenticated.
+            // An unverified restore overwrites nothing, so there is nothing to confirm.
+            if (! $this->option('dry-run') && $archive->sealed && ! $this->confirmRestore($storagePath)) {
+                return self::FAILURE;
+            }
+
             $this->section('Extract');
-            $extracted = $restore->extract($archivePath, $workDirectory.'/extracted');
+            $extracted = $restore->extract($archive, $workDirectory.'/extracted');
             $this->passLine('Archive extracted');
 
             if ($this->option('dry-run')) {
+                $restore->assertStorageEntriesSafe($extracted);
                 $this->warnLine('Dry run - no files were written to storage.');
+
+                return self::SUCCESS;
+            }
+
+            if (! $archive->sealed) {
+                $this->section('Private copy');
+                $location = $restore->quarantineStorage($extracted, $backup['id']);
+                $this->warnLine('Nothing was written to '.$storagePath.'. The unverified files are in: '.$location);
+                $this->infoLine('Review them and copy what you need. Delete this directory when you are done.');
 
                 return self::SUCCESS;
             }
@@ -78,11 +104,13 @@ final class NotifierStorageRestoreCommand extends Command
 
             return self::SUCCESS;
         } catch (Throwable $e) {
-            $this->failLine($e->getMessage());
+            $this->failLine(OutputFormatter::escape($e->getMessage()));
 
             return self::FAILURE;
         } finally {
-            File::deleteDirectory($workDirectory);
+            if ($workDirectory !== null) {
+                File::deleteDirectory($workDirectory);
+            }
         }
     }
 
@@ -109,16 +137,38 @@ final class NotifierStorageRestoreCommand extends Command
         return self::SUCCESS;
     }
 
+    /**
+     * Production requires an explicit --force. Checked before the download, so a
+     * refused run costs nothing.
+     */
+    private function allowedInThisEnvironment(): bool
+    {
+        if ($this->option('force') || ! app()->environment('production')) {
+            return true;
+        }
+
+        $this->failLine('Refusing to restore in production without --force.');
+
+        return false;
+    }
+
+    private function reportProvenance(VerifiedArchive $archive): void
+    {
+        if ($archive->sealed) {
+            $this->passLine($archive->describe());
+        } else {
+            $this->warnLine($archive->describe());
+        }
+
+        if ($archive->foreignSite) {
+            $this->warnLine('This archive was sealed for a different repository. It is being restored only because you approved this exact file.');
+        }
+    }
+
     private function confirmRestore(string $storagePath): bool
     {
         if ($this->option('force')) {
             return true;
-        }
-
-        if (app()->environment('production')) {
-            $this->failLine('Refusing to restore in production without --force.');
-
-            return false;
         }
 
         $this->warnLine('Files in "'.$storagePath.'" with the same paths will be OVERWRITTEN.');
@@ -130,7 +180,17 @@ final class NotifierStorageRestoreCommand extends Command
     {
         $value = $this->option($name);
 
-        return $value === null ? null : (int) $value;
+        if ($value === null) {
+            return null;
+        }
+
+        $id = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+        if ($id === false) {
+            throw new RuntimeException('--'.$name.' must be a positive whole number.');
+        }
+
+        return $id;
     }
 
     private function humanBytes(?int $bytes): string

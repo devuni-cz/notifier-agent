@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Devuni\Notifier\Commands\NotifierCheckCommand;
+use Devuni\Notifier\Interfaces\ZipCreatorInterface;
 use Devuni\Notifier\Services\Database\MysqlDumper;
 use Devuni\Notifier\Services\Database\PostgresDumper;
 use Illuminate\Support\Facades\Artisan;
@@ -33,6 +34,51 @@ describe('NotifierCheckCommand', function () {
 
             expect($command->getDescription())->toBe('Verify the Notifier agent configuration and server connectivity');
         });
+    });
+
+    describe('backup seal check', function () {
+        it('seals and verifies a test archive with the configured tools', function () {
+            config(['notifier.backup_zip_password' => 'a-long-enough-test-password']);
+
+            $this->artisan('notifier:check')
+                ->expectsOutputToContain('A test archive was sealed and verified');
+
+            expect(glob(storage_path('app/private/notifier-check-*')))->toBe([]);
+        });
+
+        it('fails when the configured tools produce something that cannot be sealed', function () {
+            config(['notifier.backup_zip_password' => 'a-long-enough-test-password']);
+
+            app()->instance(ZipCreatorInterface::class, new class implements ZipCreatorInterface
+            {
+                public static function isAvailable(): bool
+                {
+                    return true;
+                }
+
+                public function create(string $sourcePath, string $zipPath, string $password, array $excludedFiles = []): int
+                {
+                    file_put_contents($zipPath, str_repeat('not a zip ', 20));
+
+                    return 1;
+                }
+            });
+
+            $this->artisan('notifier:check')
+                ->expectsOutputToContain('Backups cannot be sealed on this host');
+
+            expect(glob(storage_path('app/private/notifier-check-*')))->toBe([]);
+        });
+
+        it('warns when backups are not being sealed', function (array $config) {
+            config($config);
+
+            $this->artisan('notifier:check')
+                ->expectsOutputToContain('Backups are not being sealed');
+        })->with([
+            'no password' => [['notifier.backup_zip_password' => '']],
+            'switched off' => [['notifier.backup_zip_password' => 'a-long-enough-test-password', 'notifier.seal_backups' => false]],
+        ]);
     });
 
     describe('restore & trigger credential checks', function () {

@@ -95,6 +95,18 @@ describe('HeartbeatService::gatherManifest', function () {
             ->and($features['backups'])->toBeBool();
     });
 
+    it('reports whether the most recent backup was sealed', function (?string $password, ?bool $cached, bool $expected) {
+        config(['notifier.backup_zip_password' => $password]);
+        Cache::forever(HeartbeatService::LAST_BACKUP_SEALED_KEY, $cached);
+
+        expect(heartbeatService()->gatherManifest()['enabled_features']['sealed_backups'])->toBe($expected);
+    })->with([
+        'sealed' => ['a-long-enough-password', true, true],
+        'not sealed' => ['a-long-enough-password', false, false],
+        'nothing recorded yet' => ['a-long-enough-password', null, false],
+        'password removed since' => ['', true, false],
+    ]);
+
     it('reports disk bytes as int or null', function () {
         $manifest = heartbeatService()->gatherManifest();
 

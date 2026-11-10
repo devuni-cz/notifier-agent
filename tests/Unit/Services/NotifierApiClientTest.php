@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Devuni\Notifier\Services\NotifierApiClient;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
@@ -100,6 +101,99 @@ describe('NotifierApiClient requests', function () {
         expect($response->status())->toBe(301);
         Http::assertNotSent(fn ($request) => str_contains($request->url(), 'evil.example.com'));
         Http::assertSentCount(1);
+    });
+});
+
+describe('NotifierApiClient::downloadTo', function () {
+    beforeEach(function () {
+        $this->destination = sys_get_temp_dir().'/notifier-download-'.bin2hex(random_bytes(8));
+    });
+
+    afterEach(function () {
+        File::delete($this->destination);
+    });
+
+    it('writes a body of exactly the limit and keeps the response headers', function () {
+        config(['notifier.restore_max_download_bytes' => 1024]);
+        Http::fake(['*' => Http::response(str_repeat('a', 1024), 200, ['X-Backup-Checksum' => 'abc'])]);
+
+        $response = apiClient()->downloadTo('/backups/1/download', $this->destination, 'restore-token');
+
+        expect($response->successful())->toBeTrue()
+            ->and($response->header('X-Backup-Checksum'))->toBe('abc')
+            ->and(file_get_contents($this->destination))->toBe(str_repeat('a', 1024));
+    });
+
+    it('stops a body one byte over the limit and removes the file', function () {
+        config(['notifier.restore_max_download_bytes' => 1024]);
+        Http::fake(['*' => Http::response(str_repeat('a', 1025), 200)]);
+
+        expect(fn () => apiClient()->downloadTo('/backups/1/download', $this->destination, 'restore-token'))
+            ->toThrow(RuntimeException::class, 'larger than the 1024-byte limit (NOTIFIER_RESTORE_MAX_DOWNLOAD_BYTES)');
+
+        expect($this->destination)->not->toBeFile();
+    });
+
+    it('stops a failed request whose body is over the limit', function () {
+        config(['notifier.restore_max_download_bytes' => 1024]);
+        Http::fake(['*' => Http::response(str_repeat('a', 2048), 500)]);
+
+        expect(fn () => apiClient()->downloadTo('/backups/1/download', $this->destination, 'restore-token'))
+            ->toThrow(RuntimeException::class, 'NOTIFIER_RESTORE_MAX_DOWNLOAD_BYTES');
+
+        expect($this->destination)->not->toBeFile();
+    });
+
+    it('does not limit the download when the limit is 0', function () {
+        config(['notifier.restore_max_download_bytes' => 0]);
+        Http::fake(['*' => Http::response(str_repeat('a', 2048), 200)]);
+
+        apiClient()->downloadTo('/backups/1/download', $this->destination, 'restore-token');
+
+        expect(filesize($this->destination))->toBe(2048);
+    });
+
+    it('counts every download on its own', function () {
+        config(['notifier.restore_max_download_bytes' => 1024]);
+        Http::fake(['*' => fn () => Http::response(str_repeat('a', 800), 200)]);
+
+        apiClient()->downloadTo('/backups/1/download', $this->destination, 'restore-token');
+        apiClient()->downloadTo('/backups/2/download', $this->destination, 'restore-token');
+
+        expect(filesize($this->destination))->toBe(800);
+    });
+
+    it('keeps the error of a failed request readable after the file is deleted', function () {
+        Http::fake(['*' => Http::response(['message' => 'Backup is gone'], 404)]);
+
+        $response = apiClient()->downloadTo('/backups/1/download', $this->destination, 'restore-token');
+
+        File::delete($this->destination);
+
+        expect($this->destination)->not->toBeFile()
+            ->and($response->status())->toBe(404)
+            ->and(apiClient()->formatError($response))->toBe('Backup is gone');
+    });
+
+    it('keeps only the start of a very long error body', function () {
+        Http::fake(['*' => Http::response(str_repeat('x', 200_000), 500)]);
+
+        $response = apiClient()->downloadTo('/backups/1/download', $this->destination, 'restore-token');
+
+        expect(mb_strlen($response->body(), '8bit'))->toBe(65536);
+    });
+
+    it('still reports an error body cut off in the middle of a character', function () {
+        // The two-byte character starts at the last byte that is kept.
+        Http::fake(['*' => Http::response(str_repeat('x', 65535)."\u{E9}".str_repeat('y', 100), 500)]);
+
+        $response = apiClient()->downloadTo('/backups/1/download', $this->destination, 'restore-token');
+
+        expect(apiClient()->formatError($response))->toBe(str_repeat('x', 500));
+    });
+
+    it('defaults the limit to the largest backup the control plane accepts', function () {
+        expect(config('notifier.restore_max_download_bytes'))->toBe(20 * 1024 * 1024 * 1024);
     });
 });
 

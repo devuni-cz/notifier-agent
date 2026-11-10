@@ -16,47 +16,43 @@ use RuntimeException;
  * NEVER emits these, so their presence means the archive was tampered with and the
  * restore must abort before a single byte reaches the client.
  *
+ * The one exception is the `\restrict <key>` / `\unrestrict <key>` pair that pg_dump
+ * 13.22, 14.19, 15.14, 16.10, 17.6 and newer write around a plain dump. They only
+ * switch psql's own metacommand lockdown on and off, so they are allowed, but only
+ * as a whole line of exactly the directive and an alphanumeric key.
+ *
  * The AES-256 archive password (enforced by the extractors) is the primary gate;
  * this is defense-in-depth for the case where an attacker also knows the password.
  */
 final class SqlDirectiveGuard
 {
     /**
-     * A plain pg_dump interleaves SQL statements with `COPY ... FROM stdin;` data
-     * blocks. Inside a block every `\`-led line is escaped table data (`\t`, `\N`,
-     * `\\`, ...) and must be ignored; the lone `\.` line ends the block. OUTSIDE a
-     * block a genuine dump has no `\`-led lines at all, so any backslash there is a
-     * psql metacommand (`\!`, `\i`, `\o`, `\copy`, `\gexec`, ...).
+     * Best-effort inspection of the script, see {@see PsqlScriptScanner}. A backslash
+     * inside a string, comment, routine body or COPY block is treated as data;
+     * anywhere else as a psql metacommand (`\!`, `\i`, `\o`, `\copy`, `\gexec`, ...).
      *
-     * @throws RuntimeException When a psql metacommand is found outside a COPY block.
+     * @throws RuntimeException When a metacommand is found or the script cannot be verified.
      */
     public static function assertPostgresSafe(string $sqlPath): void
+    {
+        self::postgresRestrictLines($sqlPath);
+    }
+
+    /**
+     * Inspects the script like {@see assertPostgresSafe} and reports where pg_dump's
+     * own restrict and unrestrict lines are. Only the inspection can tell them from
+     * the same text stored in a string or a COPY block.
+     *
+     * @return list<array{0: int, 1: int}> Byte offset and length of each line, in file order.
+     *
+     * @throws RuntimeException When a metacommand is found or the script cannot be verified.
+     */
+    public static function postgresRestrictLines(string $sqlPath): array
     {
         $handle = self::open($sqlPath);
 
         try {
-            $inCopyBlock = false;
-            $lineNumber = 0;
-
-            while (($line = fgets($handle)) !== false) {
-                $lineNumber++;
-
-                if ($inCopyBlock) {
-                    if (mb_rtrim($line, "\r\n") === '\.') {
-                        $inCopyBlock = false;
-                    }
-
-                    continue;
-                }
-
-                if (preg_match('/^\s*\\\\/', $line) === 1) {
-                    self::reject('psql', $lineNumber);
-                }
-
-                if (preg_match('/^\s*COPY\b.+\bFROM\s+stdin\s*;/i', $line) === 1) {
-                    $inCopyBlock = true;
-                }
-            }
+            return new PsqlScriptScanner($handle)->scan();
         } finally {
             fclose($handle);
         }
@@ -88,6 +84,22 @@ final class SqlDirectiveGuard
         }
     }
 
+    public static function reject(string $client, int $lineNumber): never
+    {
+        throw new RuntimeException(
+            'Refusing to restore: the dump contains a '.$client.' client directive on line '.$lineNumber
+            .' that a genuine backup never produces. The archive is corrupt or has been tampered with.'
+        );
+    }
+
+    public static function rejectUnverifiable(string $client, int $lineNumber): never
+    {
+        throw new RuntimeException(
+            'Refusing to restore: line '.$lineNumber.' of the dump cannot be verified as free of '.$client
+            .' client directives. The archive is corrupt or has been tampered with.'
+        );
+    }
+
     /**
      * @return resource
      */
@@ -100,13 +112,5 @@ final class SqlDirectiveGuard
         }
 
         return $handle;
-    }
-
-    private static function reject(string $client, int $lineNumber): never
-    {
-        throw new RuntimeException(
-            'Refusing to restore: the dump contains a '.$client.' client directive on line '.$lineNumber
-            .' that a genuine backup never produces. The archive is corrupt or has been tampered with.'
-        );
     }
 }

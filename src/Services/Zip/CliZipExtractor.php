@@ -13,12 +13,12 @@ use RecursiveIteratorIterator;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
-final class CliZipExtractor implements ZipExtractorInterface
+final readonly class CliZipExtractor implements ZipExtractorInterface
 {
     use GuardsExtractionSize;
 
     public function __construct(
-        private readonly NotifierLoggerService $notifierLogger,
+        private NotifierLoggerService $notifierLogger,
     ) {}
 
     public static function isAvailable(): bool
@@ -29,7 +29,62 @@ final class CliZipExtractor implements ZipExtractorInterface
         return $process->isSuccessful();
     }
 
-    public function extract(string $zipPath, string $destination, string $password): int
+    /**
+     * Whether a `7z l -slt` listing shows at least one file and no plaintext one.
+     * A directory entry carries no encryption of its own, so it is exempt. Lines
+     * are read one at a time: whatever else a listing contains can only add lines
+     * and never removes the ones 7z printed for a real entry.
+     */
+    public static function everyFileEntryEncrypted(string $listing): bool
+    {
+        $folder = null;
+        $encrypted = 0;
+
+        foreach (self::entryLines($listing) as $line) {
+            if (preg_match('/^Folder = ([+-])/', $line, $match) === 1) {
+                $folder = $match[1];
+
+                continue;
+            }
+
+            if (preg_match('/^Encrypted = ([+-])/', $line, $match) !== 1) {
+                continue;
+            }
+
+            if ($match[1] === '-' && $folder !== '+') {
+                return false;
+            }
+
+            $encrypted += $match[1] === '+' ? 1 : 0;
+            $folder = null;
+        }
+
+        return $encrypted > 0;
+    }
+
+    /**
+     * Sum the declared uncompressed + compressed sizes in a `7z l -slt` listing.
+     *
+     * @return array{0: int, 1: int} [uncompressed, compressed] bytes
+     */
+    public static function listedSizes(string $listing): array
+    {
+        $uncompressed = 0;
+        $compressed = 0;
+
+        foreach (self::entryLines($listing) as $line) {
+            // Anchored so "Packed Size = " never satisfies "^Size = ".
+            if (preg_match('/^Size = (\d+)/', $line, $match) === 1) {
+                $uncompressed += (int) $match[1];
+            } elseif (preg_match('/^Packed Size = (\d+)/', $line, $match) === 1) {
+                $compressed += (int) $match[1];
+            }
+        }
+
+        return [$uncompressed, $compressed];
+    }
+
+    public function extract(string $zipPath, string $destination, string $password, bool $sealVerified = false): int
     {
         $logger = $this->notifierLogger->get();
 
@@ -40,17 +95,21 @@ final class CliZipExtractor implements ZipExtractorInterface
         }
 
         // When a password is configured, every file entry must be encrypted -
-        // 7z would silently extract a plaintext (attacker-substituted) archive and
-        // ignore the password, so the encryption is what authenticates the archive.
-        if ($password !== '') {
-            $this->assertEveryEntryEncrypted($zipPath);
+        // 7z would silently extract a plaintext archive and ignore the password.
+        // A verified seal already covers this, and a genuine backup must not be
+        // refused because of how one of its file names prints in a listing.
+        if ($password !== '' && ! $sealVerified && ! self::everyFileEntryEncrypted($this->listing($zipPath))) {
+            throw new RuntimeException(
+                'Refusing to restore: the archive has an unencrypted entry or no files at all, but a backup password '
+                .'is configured. The archive is corrupt or has been substituted.'
+            );
         }
 
         File::ensureDirectoryExists($destination);
 
         // Bound the extraction before writing anything: sum the declared
         // uncompressed sizes and refuse a decompression bomb / disk-fill.
-        [$uncompressed, $compressed] = $this->extractedSizeBytes($zipPath);
+        [$uncompressed, $compressed] = self::listedSizes($this->listing($zipPath));
         $this->guardExtractedSize($uncompressed, $destination, $compressed);
 
         // Password is provided via stdin (not argv) to prevent exposure via
@@ -98,62 +157,31 @@ final class CliZipExtractor implements ZipExtractorInterface
         // symlink entries. Verify AFTER extraction that nothing is a symlink and
         // nothing resolved outside the destination (zip-slip), matching the guard
         // the PHP extractor applies inline.
-        $this->assertNoUnsafePaths($destination);
+        $this->assertNoUnsafePaths($destination, $sealVerified);
 
         return $this->countExtracted($destination);
     }
 
     /**
-     * Sum the declared uncompressed + compressed sizes of every file entry via
-     * `7z l -slt`. Runs unconditionally (unlike the encryption check, which only
-     * runs with a password), so it needs its own listing pass.
+     * The lines of a `7z l -slt` listing from the first entry on, past the
+     * archive-level header.
      *
-     * @return array{0: int, 1: int} [uncompressed, compressed] bytes
+     * @return list<string>
      */
-    private function extractedSizeBytes(string $zipPath): array
+    private static function entryLines(string $listing): array
     {
-        $list = new Process(['7z', 'l', '-slt', $zipPath]);
-        $list->setInput('');
-        $list->run();
+        $lines = preg_split('/\R/', $listing) ?: [];
 
-        if (! $list->isSuccessful()) {
-            throw new RuntimeException(
-                'Unable to inspect archive size (7z l): '.($list->getErrorOutput() ?: $list->getOutput())
-            );
-        }
-
-        $output = $list->getOutput();
-        $marker = mb_strpos($output, '----------');
-        $entriesText = $marker === false ? $output : mb_substr($output, $marker);
-
-        $blocks = preg_split('/\R\R+/', mb_trim($entriesText)) ?: [];
-        $uncompressed = 0;
-        $compressed = 0;
-
-        foreach ($blocks as $block) {
-            if (! str_contains($block, 'Path = ')) {
-                continue;
-            }
-
-            // Anchored /m so "Packed Size = " never satisfies "^Size = ".
-            if (preg_match('/^Size = (\d+)/m', $block, $m) === 1) {
-                $uncompressed += (int) $m[1];
-            }
-
-            if (preg_match('/^Packed Size = (\d+)/m', $block, $m) === 1) {
-                $compressed += (int) $m[1];
+        foreach ($lines as $index => $line) {
+            if (str_starts_with($line, '----------')) {
+                return array_slice($lines, $index + 1);
             }
         }
 
-        return [$uncompressed, $compressed];
+        return $lines;
     }
 
-    /**
-     * Reject the archive unless every file entry is AES-encrypted, using
-     * `7z l -slt`. A directory entry (Folder = +) carries no encryption and is
-     * skipped; a plaintext file entry (Encrypted = -) aborts the restore.
-     */
-    private function assertEveryEntryEncrypted(string $zipPath): void
+    private function listing(string $zipPath): string
     {
         $list = new Process(['7z', 'l', '-slt', $zipPath]);
         // Never block on a password prompt while merely listing.
@@ -162,48 +190,20 @@ final class CliZipExtractor implements ZipExtractorInterface
 
         if (! $list->isSuccessful()) {
             throw new RuntimeException(
-                'Unable to inspect archive encryption (7z l): '.($list->getErrorOutput() ?: $list->getOutput())
+                'Unable to inspect the archive (7z l): '.($list->getErrorOutput() ?: $list->getOutput())
             );
         }
 
-        $output = $list->getOutput();
-        $marker = mb_strpos($output, '----------');
-        $entriesText = $marker === false ? $output : mb_substr($output, $marker);
-
-        $blocks = preg_split('/\R\R+/', mb_trim($entriesText)) ?: [];
-        $fileEntries = 0;
-
-        foreach ($blocks as $block) {
-            if (! str_contains($block, 'Path = ')) {
-                continue;
-            }
-
-            // Folder entries have no encryption of their own.
-            if (preg_match('/^Folder = \+/m', $block) === 1) {
-                continue;
-            }
-
-            $fileEntries++;
-
-            if (preg_match('/^Encrypted = \+/m', $block) !== 1) {
-                throw new RuntimeException(
-                    'Refusing to restore: the archive contains an unencrypted entry, but a backup password '
-                    .'is configured. The archive is corrupt or has been substituted.'
-                );
-            }
-        }
-
-        if ($fileEntries === 0) {
-            throw new RuntimeException('Refusing to restore: the archive contains no file entries to verify.');
-        }
+        return $list->getOutput();
     }
 
     /**
      * Abort (and wipe the extraction) if any extracted path is a symlink or
      * resolves outside $destination - the classic zip-slip / symlink escapes that
-     * an external 7z binary may not block.
+     * an external 7z binary may not block. An archive that has not been
+     * authenticated also may not carry control characters in its names.
      */
-    private function assertNoUnsafePaths(string $destination): void
+    private function assertNoUnsafePaths(string $destination, bool $sealVerified): void
     {
         $root = realpath($destination);
 
@@ -220,6 +220,12 @@ final class CliZipExtractor implements ZipExtractorInterface
 
         foreach ($iterator as $entry) {
             $path = $entry->getPathname();
+
+            if (! $sealVerified && preg_match(self::UNPRINTABLE_NAME, $entry->getFilename()) === 1) {
+                File::deleteDirectory($destination);
+
+                throw new RuntimeException('Refusing to restore: an archive entry has control characters in its name.');
+            }
 
             if (is_link($path)) {
                 File::deleteDirectory($destination);

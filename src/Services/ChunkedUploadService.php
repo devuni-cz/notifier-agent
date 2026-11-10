@@ -286,8 +286,12 @@ final class ChunkedUploadService
                 ]));
 
                 if ($consecutiveErrors >= 5) {
+                    // Code 0, not $e->getCode(): a Throwable's code may be a
+                    // string (PDOException), which RuntimeException rejects.
                     throw new RuntimeException(
                         "Status polling failed {$consecutiveErrors} times in a row: ".$e->getMessage(),
+                        0,
+                        $e,
                     );
                 }
 

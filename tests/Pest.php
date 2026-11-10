@@ -45,3 +45,24 @@ function something()
 {
     // ..
 }
+
+/**
+ * Write a real AES-256 archive, as PhpZipCreator would.
+ *
+ * @param  array<string, string>  $entries  Entry name => contents.
+ */
+function makeEncryptedArchive(string $path, string $password, array $entries = ['dump.sql' => 'SELECT 1;']): void
+{
+    $zip = new ZipArchive;
+    $zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+    $zip->setPassword($password);
+
+    foreach ($entries as $name => $contents) {
+        $zip->addFromString($name, $contents);
+        $zip->setEncryptionName($name, ZipArchive::EM_AES_256);
+    }
+
+    $zip->close();
+
+    clearstatcache(true, $path);
+}

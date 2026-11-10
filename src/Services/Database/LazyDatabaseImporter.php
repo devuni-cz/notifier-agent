@@ -33,6 +33,11 @@ final class LazyDatabaseImporter implements DatabaseImporterInterface
         return true;
     }
 
+    public function inspect(string $sqlPath): void
+    {
+        $this->resolve()->inspect($sqlPath);
+    }
+
     public function import(string $sqlPath): void
     {
         $this->resolve()->import($sqlPath);

@@ -7,9 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-11-10
+
+### Added
+
+-   **Backups taken with a password now carry a password-keyed seal in the ZIP comment.** A restore verifies it before extracting anything and prints the authenticated backup type and date. The seal is added after the ZIP is finished, so it works the same for 7z and ZipArchive output, and the archive stays a standard ZIP that older agents and the control plane read unchanged. `NOTIFIER_SEAL_BACKUPS=false` stops new backups from being sealed; it never relaxes a restore.
+-   **`notifier:check` tests sealing** with the ZIP tools the host really uses, and the heartbeat reports `sealed_backups` under `enabled_features` for the most recent backup.
+-   **Backup downloads have a size limit.** `NOTIFIER_RESTORE_MAX_DOWNLOAD_BYTES` (default 20 GiB, the largest backup the control plane accepts; `0` turns it off) caps how many bytes a restore writes to disk while downloading an archive. A larger download stops with a clear error and leaves no partial file behind.
+
 ### Changed
 
+-   **BREAKING: a restore refuses an archive whose seal cannot be verified**, including every backup taken before this release, unless given `--id=N` and the `--accept-unverified=` value the refusal prints for that exact file. `--force` cannot replace this approval, and neither can any config value. Hosts with no backup password need the same approval. An approved storage restore without a valid seal goes to a private directory for manual review instead of public storage. The newest backup needs `--id` when its seal is older than 35 days. `--dry-run` applies the same checks. Upgrade production agents before staging.
+-   **Restore confirmation now comes after verification**, so what the operator confirms is authenticated. The production `--force` gate still runs before anything is downloaded.
+-   **`ZipExtractorInterface::extract()` takes an optional fourth argument**, `bool $sealVerified = false`. Custom implementations need to accept it.
+-   **`DatabaseImporterInterface` has a new required method**, `inspect(string $sqlPath): void`. Custom implementations need to add it, or PHP stops with a fatal error when the class is loaded.
+-   **Guzzle 8 is now allowed** (`guzzlehttp/guzzle: ^7.15.2 || ^8.3.1`). The agent talks HTTP only through Laravel's `Http` client, and Laravel 13 accepts Guzzle `^7.8.2 || ^8.0`, so Laravel 13 installs can move to Guzzle 8 while Laravel 12 installs keep resolving 7.x. The 7.x floor (CVE fixes from 1.7.3) is unchanged.
+-   **The `nesbot/carbon` conflict is narrowed from `>=3.12.0` to exactly `3.12.0`.** Only carbon 3.12.0 declares `Carbon::plus(..., ?bool $overflow)`, which is fatal against Laravel 12's `Illuminate\Support\Carbon::plus()` override; 3.12.1 dropped that method again and every release up to 3.15.1 boots cleanly on Laravel 12.70. Installs were held on carbon 3.11.x for no reason and now get current carbon fixes.
+-   **Dev tooling bumped to the latest releases:** Pest 5 / PHPUnit 13 on Laravel 13 (`pestphp/pest: ^4.7.8 || ^5.3.4` - Pest 5 requires Laravel 13 and Symfony 8, so the Laravel 12 CI rows keep Pest 4), plus Larastan 3.13, Pint 1.32, Rector 2.8, Testbench 11.3, Filament support 5.11, Mockery 1.6.15 and Collision 8.9.5.
+-   **PHPStan now analyses the package with its own service provider booted** (new `testbench.yaml`, excluded from the dist archive). Without it Larastan did not know the `notifier::` view namespace and reported the Filament banner's view name as an invalid `view-string`.
+-   **Rector 2.8's PHP 8.2-8.4 refactors applied to `src/`.** The services, dumpers/importers, zip creators/extractors, the backup controller and the token middleware are now `final readonly class` (they were already `final` with only readonly properties, so nothing can observe the difference); class constants are typed; `PhpZipCreator` uses `array_any()`; closures and arrow functions declare return types. The status-poll failure in `ChunkedUploadService` now chains the underlying exception as `previous` (code `0`, since a `Throwable` code may be a string), so exception handlers can see the root cause; the `backup` log still records only its message. `LocallyCalledStaticMethodToNonStaticRector` is skipped in `rector.php`: the service provider's static helpers are deliberately pure.
 -   **README no longer recommends scheduling the backup commands on every site.** The "Scheduled backups (recommended)" section presented client-side cron as the default, but Devuni-managed sites are backed up by the **control plane's** scheduled services (frequency configured per repository in the server's repository settings, delivered through the inbound HTTP trigger) — following the old advice would run every backup twice. The section now describes both modes explicitly: control-plane-managed (default, nothing to schedule locally) and self-scheduled (standalone or legacy projects only), with the heartbeat cron required in both.
+-   **PostgreSQL restores now keep `psql` locked against client directives for the whole run**, using its restricted mode with a key private to that run, on clients that have it (13.22, 14.19, 15.14, 16.10, 17.6, 18 and newer). `ysqlsh` and older clients restore as before and log a warning. A dump may hold at most one restrict and one unrestrict line. On Windows the restore writes a temporary copy of the dump next to it; elsewhere the dump is streamed.
+
+### Fixed
+
+-   **The PHP restore path reports a failed entry clearly and no longer misreports healthy 7z archives as corrupt.** Every entry is checked against its declared size and a failure raises a `RuntimeException` naming the entry and the cause. Separately, 7-Zip writes WinZip AE-2 entries with a CRC of 0, which libzip before 1.9 (Ubuntu 22.04 and 24.04 ship 1.7.3) rejects from 20 bytes up. Such entries now restore on those hosts as well, without installing 7z.
+-   **Storage restores no longer skip files inside directories named like version control** (`.git`, `.svn`, `CVS` and so on), which were left out silently.
+-   **`--id` on the restore commands must be a positive whole number.** Anything else used to be read as `0`.
+-   **`CliZipCreatorTest` passes again on PHP 8.4.26 / 8.5.11 and newer.** Those releases made `ZipArchive::getFromName()` read past the last byte so that libzip validates the CRC (php/php-src GH-23240), which exposed the AE-2 mismatch above. The test now checks the right and wrong password through `7z x`, which verifies the AES authentication code, and keeps a bounded `ZipArchive` read as an independent reader. A new test feeds a 7z-made archive to `PhpZipExtractor`, a path nothing covered before.
+-   **PostgreSQL restores no longer refuse dumps made by current `pg_dump`.** Versions 13.22, 14.19, 15.14, 16.10, 17.6 and newer write `\restrict <key>` and `\unrestrict <key>` lines into plain dumps, which the restore treated as tampering. Exactly those two lines, with an alphanumeric key and nothing after it, are now allowed.
+-   **`notifier:database-restore` now runs the import's dump checks first**, before any snapshot is taken, so `--dry-run` can no longer report success for a dump the real import would refuse.
+-   **A failed PostgreSQL import no longer replays the pre-restore snapshot.** When `psql` rolled the import back and the schema is confirmed untouched, the snapshot is discarded and the command says the database is unchanged. When that cannot be confirmed, or the client is not `psql`, the snapshot is kept for the operator. MySQL and MariaDB imports are not atomic, so they still replay it.
+-   **PostgreSQL restores no longer refuse genuine dumps whose stored text only looks like a client directive.** The dump inspection also runs in constant memory now.
 
 ## [1.8.0] - 2026-08-05
 
@@ -209,7 +238,8 @@ The first official release of **`devuni/notifier-agent`** - the client agent of 
 -   The PHP namespace is **`Devuni\Notifier\`** and the env surface uses the established `NOTIFIER_*` keys.
 -   Built on the codebase previously published as `devuni/notifier-package` (2.x). That package is superseded by this one: its `v2.8.0` is the terminal release and all further development happens here. Migration is a one-step `composer remove devuni/notifier-package && composer require devuni/notifier-agent`.
 
-[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.3...v1.8.0
 [1.7.3]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.2...v1.7.3
 [1.7.2]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.1...v1.7.2

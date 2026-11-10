@@ -225,13 +225,29 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Restore Extraction Limits
+    | Backup Sealing
+    |--------------------------------------------------------------------------
+    |
+    | Backups taken with a password carry a password-keyed seal, which a restore
+    | checks before extracting anything. Turning this off only stops new backups
+    | from being sealed; a restore never relaxes its checks because of it, so
+    | backups taken while it is off need manual approval to restore.
+    |
+    */
+    'seal_backups' => (bool) env('NOTIFIER_SEAL_BACKUPS', true),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Restore Download and Extraction Limits
     |--------------------------------------------------------------------------
     |
     | Guards against a decompression bomb / accidental disk-fill when extracting
     | a backup downloaded from the control plane. The archive is untrusted, so
     | its declared uncompressed size is checked BEFORE any byte is written.
     |
+    | - restore_max_download_bytes : ceiling on the bytes a restore writes to
+    |   disk while downloading an archive. 0 disables it. Default 20 GiB, the
+    |   largest backup the control plane accepts.
     | - restore_max_extracted_bytes : hard ceiling on the total uncompressed
     |   size of an archive. 0 disables the absolute cap. Default 10 GiB.
     | - restore_disk_free_margin_bytes : free space kept back on the destination
@@ -242,6 +258,7 @@ return [
     |   (default), because legitimate SQL dumps compress very well.
     |
     */
+    'restore_max_download_bytes' => (int) env('NOTIFIER_RESTORE_MAX_DOWNLOAD_BYTES', 20 * 1024 * 1024 * 1024),
     'restore_max_extracted_bytes' => (int) env('NOTIFIER_RESTORE_MAX_EXTRACTED_BYTES', 10 * 1024 * 1024 * 1024),
     'restore_disk_free_margin_bytes' => (int) env('NOTIFIER_RESTORE_DISK_FREE_MARGIN_BYTES', 256 * 1024 * 1024),
     'restore_max_compression_ratio' => (int) env('NOTIFIER_RESTORE_MAX_COMPRESSION_RATIO', 0),

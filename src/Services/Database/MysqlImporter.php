@@ -9,14 +9,14 @@ use Devuni\Notifier\Services\NotifierLoggerService;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
-final class MysqlImporter implements DatabaseImporterInterface
+final readonly class MysqlImporter implements DatabaseImporterInterface
 {
     /**
      * @param  string  $connection  Laravel database connection name (e.g. "mysql").
      */
     public function __construct(
-        private readonly string $connection,
-        private readonly NotifierLoggerService $notifierLogger,
+        private string $connection,
+        private NotifierLoggerService $notifierLogger,
     ) {}
 
     public static function isAvailable(): bool
@@ -25,6 +25,11 @@ final class MysqlImporter implements DatabaseImporterInterface
         $process->run();
 
         return $process->isSuccessful();
+    }
+
+    public function inspect(string $sqlPath): void
+    {
+        SqlDirectiveGuard::assertMysqlSafe($sqlPath);
     }
 
     public function import(string $sqlPath): void
@@ -38,7 +43,7 @@ final class MysqlImporter implements DatabaseImporterInterface
         // Refuse a dump carrying mysql client directives (\!, system, source)
         // before piping it in - a tampered archive could otherwise run a shell
         // command as the app user.
-        SqlDirectiveGuard::assertMysqlSafe($sqlPath);
+        $this->inspect($sqlPath);
 
         $config = config("database.connections.{$this->connection}");
 

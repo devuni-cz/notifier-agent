@@ -7,12 +7,12 @@ namespace Devuni\Notifier\Services;
 use Illuminate\Support\Facades\Log;
 use Psr\Log\LoggerInterface;
 
-final class NotifierLoggerService
+final readonly class NotifierLoggerService
 {
-    private readonly LoggerInterface $logger;
+    private LoggerInterface $logger;
 
     public function __construct(
-        private readonly string $preferredChannel = 'backup',
+        private string $preferredChannel = 'backup',
     ) {
         $this->logger = $this->hasChannel($this->preferredChannel)
             ? Log::channel($this->preferredChannel)

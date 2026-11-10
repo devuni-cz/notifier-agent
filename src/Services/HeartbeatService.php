@@ -23,21 +23,26 @@ use Throwable;
  * safe and never throws, but sending it LOGS + THROWS on failure so the operator
  * or host scheduler sees that the control plane stopped hearing from this site.
  */
-final class HeartbeatService
+final readonly class HeartbeatService
 {
     /**
      * Cache key holding the ISO8601 timestamp of the last successful database backup.
      */
-    public const LAST_DATABASE_BACKUP_KEY = 'notifier.last_database_backup_at';
+    public const string LAST_DATABASE_BACKUP_KEY = 'notifier.last_database_backup_at';
 
     /**
      * Cache key holding the ISO8601 timestamp of the last successful storage backup.
      */
-    public const LAST_STORAGE_BACKUP_KEY = 'notifier.last_storage_backup_at';
+    public const string LAST_STORAGE_BACKUP_KEY = 'notifier.last_storage_backup_at';
+
+    /**
+     * Cache key holding whether the most recent backup was sealed.
+     */
+    public const string LAST_BACKUP_SEALED_KEY = 'notifier.last_backup_sealed';
 
     public function __construct(
-        private readonly NotifierApiClient $api,
-        private readonly NotifierLoggerService $notifierLogger,
+        private NotifierApiClient $api,
+        private NotifierLoggerService $notifierLogger,
     ) {}
 
     /**
@@ -61,6 +66,7 @@ final class HeartbeatService
                 'announcements' => (bool) config('notifier.features.announcements', true),
                 'backups' => (bool) config('notifier.features.backups', true),
                 'heartbeat' => (bool) config('notifier.features.heartbeat', true),
+                'sealed_backups' => filled(config('notifier.backup_zip_password')) && Cache::get(self::LAST_BACKUP_SEALED_KEY, false) === true,
             ],
             'disk_free_bytes' => $diskFree,
             'disk_total_bytes' => $diskTotal,

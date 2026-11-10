@@ -13,7 +13,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.4",
-        "guzzlehttp/guzzle": "^7.15.2",
+        "guzzlehttp/guzzle": "^7.15.2 || ^8.3.1",
         "illuminate/console": "^12.55.0 || ^13.14",
         "illuminate/contracts": "^12.55.0 || ^13.14",
         "illuminate/http": "^12.55.0 || ^13.14",
@@ -23,19 +23,19 @@
         "laravel/prompts": "^0.3.18"
     },
     "require-dev": {
-        "filament/support": "^5.6",
-        "larastan/larastan": "^3.10.0",
-        "laravel/pint": "^1.29.1",
-        "mockery/mockery": "^1.6.12",
-        "nunomaduro/collision": "^8.9.4",
-        "orchestra/testbench": "^11.0.0 || ^12.0",
-        "pestphp/pest": "^4.7.2",
-        "pestphp/pest-plugin-laravel": "^4.1.0",
-        "rector/rector": "^2.4.5"
+        "filament/support": "^5.11.0",
+        "larastan/larastan": "^3.13.2",
+        "laravel/pint": "^1.32.1",
+        "mockery/mockery": "^1.6.15",
+        "nunomaduro/collision": "^8.9.5",
+        "orchestra/testbench": "^11.3.0 || ^12.0",
+        "pestphp/pest": "^4.7.8 || ^5.3.4",
+        "pestphp/pest-plugin-laravel": "^4.1.0 || ^5.0.1",
+        "rector/rector": "^2.8.3"
     },
     "conflict": {
         "devuni/notifier-package": "*",
-        "nesbot/carbon": ">=3.12.0"
+        "nesbot/carbon": "3.12.0"
     },
     "suggest": {
         "filament/support": "Auto-injects announcement banners into FilamentPHP dashboards; not required when using a custom (SPA) dashboard."
