@@ -6,247 +6,263 @@
 [![Laravel 12 | 13](https://img.shields.io/badge/Laravel-12%20%7C%2013-FF2D20?style=flat-square&logo=laravel&logoColor=white)](https://laravel.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE.md)
 
-Encrypted database & storage backups for Laravel apps, shipped to the [Devuni Notifier](https://notifier.devuni.cz) central server. AES-256 ZIPs, chunked HTTPS upload, token auth, queue support. Supports **MySQL**, **MariaDB**, **PostgreSQL**, and **YugabyteDB** (via YSQL).
+Laravel client for the [Devuni Notifier](https://notifier.devuni.cz) control plane.
 
-## How it works
+-   Encrypted database and storage backups, uploaded to the control plane.
+-   Restore of this site's own backups.
+-   Heartbeat that tells the control plane the site is alive.
+-   Maintenance announcements in your dashboard.
 
-```
-┌─────────────────────┐        encrypted ZIP         ┌─────────────────────┐
-│  Your Laravel app   │  ───── chunked upload ─────▶ │  notifier.devuni.cz │
-│  (this package)     │        (X-Notifier-Token)    │  (central server)   │
-└─────────────────────┘                              └─────────────────────┘
-         │                                                     │
-         │ mysqldump + storage/app/public                      │ stores + monitors
-         │ → AES-256 ZIP                                       │ → sends alerts
-         ▼                                                     ▼
-    local temp file                                     long-term backup archive
-    (cleaned up after upload)
-```
+Without a control plane (`NOTIFIER_URL`) there is nowhere to send backups. For standalone backups use [spatie/laravel-backup](https://github.com/spatie/laravel-backup).
 
-> **Heads up:** This is the **client side** of the Devuni Notifier platform. Without a central server configured via `NOTIFIER_URL`, there's nowhere to send backups. If you don't have it, try [spatie/laravel-backup](https://github.com/spatie/laravel-backup) instead.
+## Requirements
+
+-   PHP 8.4+
+-   Laravel 12.55+ or 13.14+
+-   `7z` (`p7zip-full`, recommended) or the PHP `zip` extension
+-   The client tools for your database:
+
+| Driver             | Backup                                | Restore                            |
+| ------------------ | ------------------------------------- | ---------------------------------- |
+| `mysql`, `mariadb` | `mysqldump`                           | `mysql`                            |
+| `pgsql`            | `pg_dump`, or `ysql_dump` (YugabyteDB) | `psql`, or `ysqlsh` (YugabyteDB)   |
+
+-   MariaDB uses the same `mysqldump` and `mysql` commands. `mariadb-dump` alone is not enough.
+-   Database restore also needs the backup tool, for its safety dump (unless `--no-snapshot`).
+-   PostgreSQL restore: use a `psql` at least as new as the `pg_dump` that made the backup. 13.22, 14.19, 15.14, 16.10, 17.6 and 18+ also run in restricted mode; older clients log a warning.
 
 ## Install
 
 ```bash
 composer require devuni/notifier-agent
-php artisan vendor:publish --tag="notifier-config"
-php artisan notifier:install   # interactive .env wizard
-php artisan notifier:check     # verify setup (env, DB, 7z, mysqldump, URL)
 ```
-
-**Requirements:** PHP 8.4+, Laravel `^12.55` or `^13.14`, the right dump tool for your DB (`mysqldump` / `mariadb-dump` for MySQL & MariaDB, `pg_dump` or `ysql_dump` for PostgreSQL & YugabyteDB), and `p7zip-full` (recommended) or PHP `zip` extension.
-
-### Migrating from `devuni/notifier-package`
-
-This package is the successor of [`devuni/notifier-package`](https://github.com/devuni-cz/notifier-package) - same namespace (`Devuni\Notifier\`), same env vars (`NOTIFIER_*`), same artisan commands, same `config/notifier.php`, same route prefix. The swap is one step:
 
 ```bash
-composer remove devuni/notifier-package
-composer require devuni/notifier-agent
+php artisan notifier:install
 ```
 
-Nothing else changes - your published config, `.env`, and scheduled `notifier:*` commands keep working as-is. Don't be confused by the version number: `notifier-agent` restarts at `1.0.0`, but it contains everything `notifier-package` `2.8.0` had (and newer).
+```bash
+php artisan notifier:check
+```
 
-> **Never install both packages side by side** - they share the `Devuni\Notifier\` namespace. Composer refuses the combination (a `conflict` rule guards it), so if you see a conflict error during `composer require`, run the `composer remove` step first.
+-   `notifier:install` writes `NOTIFIER_URL`, `NOTIFIER_BACKUP_CODE` and `NOTIFIER_BACKUP_PASSWORD` to `.env`. It can also set `NOTIFIER_RESTORE_TOKEN` and `NOTIFIER_TRIGGER_SECRET`.
+-   Keep a copy of `NOTIFIER_BACKUP_PASSWORD` outside the server. Without it no backup can be restored.
+-   `notifier:check` tests the env, restore token, database, storage folders, dump tool, ZIP tools, seal, log channel, queue and whether the server answers. It doesn't test the backup code.
+-   A new Laravel app has no `backup` log channel. Add one to `config/logging.php`, or logs go to `daily`.
+-   Publish the config only to change exclusions: `php artisan vendor:publish --tag=notifier-config`.
 
-Heads-up when coming from `notifier-package` ≤ 2.7.x: version 2.8.0+ introduced **announcements**, which are enabled by default (see below). If you don't want the banner, set `NOTIFIER_ANNOUNCEMENTS_ENABLED=false`.
+## Scheduling
 
-## Usage
+Pick one mode:
 
-### Scheduled backups
+| Mode           | For                         | Schedule                                  |
+| -------------- | --------------------------- | ----------------------------------------- |
+| Control plane  | Devuni-managed sites (default) | `notifier:heartbeat` only               |
+| Self-scheduled | Standalone sites            | Backup commands and `notifier:heartbeat`  |
 
-There are two ways to run backups on a schedule - pick **one**:
-
-**Managed by the control plane (default for Devuni-managed sites).** The Notifier server triggers backups remotely through the [HTTP API](#http-api) at the frequency configured in the repository settings on the control plane. Nothing to schedule on the site: keep the package routes enabled (`NOTIFIER_ROUTES_ENABLED=true`, the default) and the trigger authenticated (`NOTIFIER_TRIGGER_SECRET`, or the backup code in single-secret mode). Do **not** also schedule the backup commands locally - every backup would run twice.
-
-**Self-scheduled (standalone or legacy projects).** Only when the control plane does not trigger this site, schedule the commands yourself - `routes/console.php`:
+-   Control plane: it calls the [trigger endpoint](#trigger-endpoint). Don't also schedule the backup commands, or every backup runs twice.
+-   Always schedule the heartbeat.
 
 ```php
+// routes/console.php
 use Illuminate\Support\Facades\Schedule;
 
+Schedule::command('notifier:heartbeat')->hourly()->onOneServer();
+
+// Self-scheduled mode only:
 Schedule::command('notifier:database-backup')->dailyAt('02:00')->onOneServer();
 Schedule::command('notifier:storage-backup')->weeklyOn(0, '03:00')->onOneServer();
 ```
 
-**In both modes** schedule the heartbeat - the control plane never triggers it, the agent pushes it (see [Heartbeat](#heartbeat)):
+## Commands
 
-```php
-Schedule::command('notifier:heartbeat')->hourly()->onOneServer();
-```
+| Command                     | Does                                                        |
+| --------------------------- | ----------------------------------------------------------- |
+| `notifier:install`          | `.env` wizard. On a configured site it needs `--force`; current values are prefilled. |
+| `notifier:check`            | Checks the setup.                                           |
+| `notifier:database-backup`  | Dumps, encrypts, seals and uploads the database.            |
+| `notifier:storage-backup`   | Same for `storage/app/public`.                              |
+| `notifier:heartbeat`        | Sends the heartbeat.                                        |
+| `notifier:database-restore` | Restores a database backup.                                 |
+| `notifier:storage-restore`  | Restores a storage backup.                                  |
 
-### On demand
-
-```bash
-php artisan notifier:database-backup
-php artisan notifier:storage-backup
-```
-
-### Restore & bootstrap
-
-Pull this site's own backups back down from the control plane - for bootstrapping a fresh deployment, disaster recovery, or refreshing staging:
+## Restore
 
 ```bash
-php artisan notifier:database-restore --list   # see what is available
-php artisan notifier:database-restore          # apply the newest database backup
-php artisan notifier:storage-restore           # apply the newest storage backup
+php artisan notifier:database-restore --list
 ```
-
-Both commands support `--list`, `--id=`, `--dry-run` (download + verify without applying) and require `--force` in production; the database restore additionally asks you to type the database name to confirm and dumps the current database to a pre-restore snapshot first (skip with `--no-snapshot`). Storage restore is additive - it overwrites files with matching paths but never deletes anything.
-
-**Sealed backups.** Backups taken with a password carry a seal in the ZIP comment, keyed from `NOTIFIER_BACKUP_PASSWORD`. A restore checks it before extracting anything and prints the authenticated backup type and date, also under `--force`. `--dry-run` authenticates and extracts the archive just like a real restore and stops before applying it, so a scheduled `--dry-run` is a regular test that backups can be read back. It does not run the database import.
-
-- Without `--id`, the newest backup is refused if it was sealed more than 35 days ago. Name the backup with `--id=` if it really is the one you want.
-- An archive that cannot be authenticated is refused: every backup taken before sealing was introduced, one made on a host with no password, or one whose seal does not match. If you trust that exact file, re-run with the `--id=` and `--accept-unverified=` values the refusal prints. Neither `--force` nor any config value can replace this approval.
-- An approved storage restore without a valid seal is not applied. The files go to a private directory under `storage/app/notifier-restore/`, and you copy what you need and delete the directory.
-- A backup sealed as the other type (database vs. storage) is never restored.
-
-Upgrade production agents before staging, then run one manual backup and a `--dry-run` of each type per host. `notifier:check` tests sealing with the tools the host really uses, and the heartbeat reports `sealed_backups` for the most recent backup. `NOTIFIER_SEAL_BACKUPS=false` stops new backups from being sealed; it never relaxes a restore.
-
-A restore stops downloading once the archive goes over `NOTIFIER_RESTORE_MAX_DOWNLOAD_BYTES` (default 20 GiB, the largest backup the control plane accepts; `0` turns the limit off), so an oversized response stops at that size. The limit does not check free disk space.
-
-Restore is authenticated with a **separate** `NOTIFIER_RESTORE_TOKEN` (issued per repository on the control plane) - never the backup code - so leaking the credential that *uploads* backups cannot be used to *download* them. Without the token the restore commands are disabled. `notifier:install` offers to configure it, and `notifier:check` warns when it is missing.
-
-**Bootstrapping a fresh deployment:** deploy → configure `.env` → run both restore commands (with `--force` on production) → done. Three things to know:
-
-- Copy the **original** `NOTIFIER_BACKUP_PASSWORD` from the old deployment - every archive on the control plane is encrypted and sealed with it, so a freshly generated password can neither decrypt nor authenticate anything. Set `NOTIFIER_RESTORE_TOKEN` alongside it.
-- Point the new deployment at the **same** repository `NOTIFIER_URL` as the old one - backup history belongs to the repository and each seal names it, so a new repository id has nothing to pull and restoring across repositories needs the same per-file approval as above.
-- Don't run the backup commands before the site has data. The control plane rejects near-empty uploads ("Backup too small"), so a database backup of a freshly migrated, empty database is expected to fail - restore first, and let the scheduled backups (the control plane's triggers, or your cron in self-scheduled mode) take over once there is something to back up.
-
-### HTTP API
-
-The inbound trigger endpoint - this is what the control plane's scheduled backup services call; an external scheduler can use it the same way. Rate-limited to 10 req/hour.
 
 ```bash
-curl -X POST https://your-app.com/api/notifier/backup \
-  -H "X-Notifier-Token: your-token" \
-  -d "type=backup_database"   # or backup_storage
+php artisan notifier:database-restore --dry-run
 ```
-
-The token is the site's `NOTIFIER_TRIGGER_SECRET`; when no dedicated trigger secret is configured, the backup code is accepted instead (single-secret mode).
-
-On failure the response returns an opaque `error_id` (UUID) - the full detail (stack trace, `mysqldump`/7z stderr) stays in your `backup` log channel. Grep logs for the UUID to correlate.
-
-### Announcements
-
-Pull this site's maintenance/announcement notices from the central server and show them in your dashboard. **On by default** - it costs nothing until `NOTIFIER_URL` is set (the service no-ops without a target). Disable with `NOTIFIER_ANNOUNCEMENTS_ENABLED=false`.
-
-**Filament hosts** (the common case): when Filament is installed, the notices are **auto-injected** as a banner into every panel page via a render hook - nothing to place. Move the default spot with `NOTIFIER_ANNOUNCEMENTS_FILAMENT_HOOK` (default `panels::content.start`; also `panels::body.start`, `panels::topbar.end`), or turn the auto-injection off with `NOTIFIER_ANNOUNCEMENTS_FILAMENT=false`. Works across Filament v3/v4/v5.
-
-**Per-announcement placement:** each announcement carries a `target` from the control plane. A Filament announcement is routed to the render hook named in its `target`; with no `target` it falls to the default hook above. The package only injects at the hooks you opt into, so to support more than one position list them all (comma-separated) in `NOTIFIER_ANNOUNCEMENTS_RENDER_HOOKS` - the default hook is always included:
 
 ```bash
-NOTIFIER_ANNOUNCEMENTS_RENDER_HOOKS="panels::content.start,panels::topbar.end"
+php artisan notifier:database-restore
 ```
 
-Existing setups need no change: with no `target` (or older servers) every announcement keeps rendering at the default hook exactly as before.
+| Option                         | Does                                                       |
+| ------------------------------ | ---------------------------------------------------------- |
+| `--list`                       | Lists available backups.                                   |
+| `--id=N`                       | Restores this backup. Default: the newest.                 |
+| `--dry-run`                    | Downloads, verifies and checks. Changes nothing.           |
+| `--force`                      | Skips the confirmation. Required in production.            |
+| `--accept-unverified=<sha256>` | Approves one backup without a valid seal. Needs `--id`.    |
+| `--no-snapshot`                | Database only: skips the dump of the current database.     |
 
-**Banner cap:** each render location shows the top `NOTIFIER_ANNOUNCEMENTS_MAX_VISIBLE` announcements (default `5`, priority-ordered) plus a muted `+ N dalších oznámení` overflow line; set it to `0` for unlimited. Custom (SPA) hosts via `customAnnouncements()` always get the full list.
+-   Needs `NOTIFIER_RESTORE_TOKEN`. It is separate from the backup code.
+-   The seal is checked before anything is extracted.
+-   No valid seal (backups before 1.9.0, sites without a password, another site's backup): refused. The refusal prints the `--id` and `--accept-unverified` values that approve that file. `--force` and config can't replace them.
+-   Without `--id`, the newest backup must have been sealed in the last 35 days.
+-   An approved unsealed storage backup goes to `storage/app/notifier-restore/`. Copy what you need by hand.
+-   Database restore asks for the database name, then dumps the current database to `storage/app/notifier-restore/` before it overwrites it.
+-   That safety dump is deleted after success. If the import fails, MySQL and MariaDB are put back from it. PostgreSQL rolls back itself; the dump is kept if the rollback can't be confirmed.
+-   Storage restore adds and overwrites files. It never deletes.
+-   Storage restore refuses a backup that contains `.php`, `.htaccess` or other executable or server config files.
+-   Downloads stop at `NOTIFIER_RESTORE_MAX_DOWNLOAD_BYTES` (default 20 GiB).
 
-**Blade hosts:** drop the component anywhere:
+### New deployment
 
-```blade
-<x-notifier-announcements-notice />
-```
+1.  Set `.env` with the original `NOTIFIER_BACKUP_PASSWORD`, the same `NOTIFIER_URL` and a `NOTIFIER_RESTORE_TOKEN`.
+2.  Run `notifier:database-restore --force` and `notifier:storage-restore --force`.
+3.  Start backups after the restore. The control plane rejects near-empty backups.
 
-**Inertia / Vue / React (custom SPA) hosts:** the service is framework-agnostic - render it yourself. Announcements aimed at a custom dashboard arrive with `dashboard_type` `custom` and a `target` DOM element id; fetch just those and mount each at its `target`:
+-   A new password can't decrypt old backups.
+-   A different `NOTIFIER_URL` points at another repository with other backups.
 
-```php
-// All active announcements (any dashboard_type):
-app(\Devuni\Notifier\Services\AnnouncementsService::class)->activeAnnouncements();
+## Configuration
 
-// Only the custom (SPA) ones, optionally for a single element id:
-app(\Devuni\Notifier\Services\AnnouncementsService::class)->customAnnouncements();
-app(\Devuni\Notifier\Services\AnnouncementsService::class)->customAnnouncements('spa-banner');
-// e.g. share as an Inertia prop, then render each item into the element named by its 'target'.
-```
+Required:
 
-Requests are **per-repository** and reuse your existing `NOTIFIER_URL` + `X-Notifier-Token` (`GET {NOTIFIER_URL}/announcements`), so the server returns only this site's announcements - no other repositories are disclosed. Responses are cached (`NOTIFIER_ANNOUNCEMENTS_CACHE_TTL`, default 900 s) so the dashboard never blocks on a live request, and any fetch failure renders nothing rather than breaking your dashboard. Customize the Blade markup with `vendor:publish --tag="notifier-views"`.
+| Key                        | Value                                                                  |
+| -------------------------- | ---------------------------------------------------------------------- |
+| `NOTIFIER_URL`             | Repository endpoint, e.g. `https://notifier.devuni.cz/api/v1/repositories/123` |
+| `NOTIFIER_BACKUP_CODE`     | Token for requests to the control plane.                               |
+| `NOTIFIER_BACKUP_PASSWORD` | Encrypts and seals backups. Never change it on a live site.            |
 
-### Heartbeat
+Optional:
 
-Tell the control plane this site is alive and report its identity. **On by default** - schedule the command and the server knows the agent is running; the server marks an agent **stale after 6 h** of silence, so the operator sees when a site stops checking in. Disable with `NOTIFIER_HEARTBEAT_ENABLED=false` (the push becomes a no-op).
+| Key                                       | Default                    | Does                                                          |
+| ----------------------------------------- | -------------------------- | ------------------------------------------------------------- |
+| `NOTIFIER_RESTORE_TOKEN`                  | none                       | Enables restore.                                              |
+| `NOTIFIER_TRIGGER_SECRET`                 | the backup code            | Token for the trigger endpoint. Must match the control plane. |
+| `NOTIFIER_DATABASE_CONNECTION`            | default connection         | Connection to back up and restore.                            |
+| `NOTIFIER_POSTGRES_DUMP_BINARY`           | `ysql_dump`, else `pg_dump` | Dump tool for `pgsql`.                                       |
+| `NOTIFIER_POSTGRES_RESTORE_BINARY`        | `ysqlsh`, else `psql`      | Restore client for `pgsql`.                                   |
+| `NOTIFIER_POSTGRES_SCHEMA`                | `public`                   | Schema for unqualified excluded tables. Restore resets it.    |
+| `NOTIFIER_ZIP_STRATEGY`                   | `auto`                     | `auto`, `cli` (7z) or `php`.                                  |
+| `NOTIFIER_SEAL_BACKUPS`                   | `true`                     | `false` stops sealing new backups.                            |
+| `NOTIFIER_CHUNK_SIZE`                     | 20 MiB                     | Upload chunk size. Keep under 100 MB behind Cloudflare Free.  |
+| `NOTIFIER_MIN_STORAGE_BACKUP_BYTES`       | `102400`                   | Smaller storage backups are skipped.                          |
+| `NOTIFIER_QUEUE_CONNECTION`               | `sync`                     | Queue for triggered backups. Commands always run inline.      |
+| `NOTIFIER_LOGGING_CHANNEL`                | `backup`                   | Falls back to `daily` if the channel doesn't exist.           |
+| `NOTIFIER_ROUTES_ENABLED`                 | `true`                     | Registers the trigger endpoint.                               |
+| `NOTIFIER_ROUTE_PREFIX`                   | `api/notifier`             | Prefix of the trigger endpoint.                               |
+| `NOTIFIER_BACKUPS_ENABLED`                | `true`                     | Reported in the heartbeat.                                    |
+| `NOTIFIER_HEARTBEAT_ENABLED`              | `true`                     | `false` makes `notifier:heartbeat` do nothing.                |
+| `NOTIFIER_RESTORE_MAX_DOWNLOAD_BYTES`     | 20 GiB                     | Restore download limit. `0` = none.                           |
+| `NOTIFIER_RESTORE_MAX_EXTRACTED_BYTES`    | 10 GiB                     | Extracted size limit. `0` = none.                             |
+| `NOTIFIER_RESTORE_DISK_FREE_MARGIN_BYTES` | 256 MiB                    | Free space kept during extraction.                            |
+| `NOTIFIER_RESTORE_MAX_COMPRESSION_RATIO`  | `0` (off)                  | Refuses archives that compress better than this.             |
 
-The host app schedules it - **hourly** is the recommended cadence (comfortably inside the 6 h stale window):
-
-```php
-use Illuminate\Support\Facades\Schedule;
-
-Schedule::command('notifier:heartbeat')->hourly()->onOneServer();
-```
-
-Or run it on demand:
-
-```bash
-php artisan notifier:heartbeat
-```
-
-Each heartbeat `POST {NOTIFIER_URL}/heartbeat` (per-repository, same `X-Notifier-Token`) reports an identity + liveness manifest: the **agent / PHP / Laravel versions**, the **queue connection**, which **features** are enabled (announcements, backups, heartbeat), **free + total disk bytes** on the storage volume, the **last database & storage backup times** (recorded automatically after any successful backup upload - the artisan commands, the inbound trigger and queued jobs alike), and the agent's own clock (`reported_at`). The server stamps its own receipt time - the agent never sends that. Unlike announcements, the heartbeat is a **push**: a rejected or unreachable server makes the command exit non-zero (and log to the `backup` channel), so your scheduler's failure handling can react.
-
-## Configure
-
-Minimum `.env`:
-
-```bash
-NOTIFIER_BACKUP_CODE=...                                        # auth token
-NOTIFIER_URL=https://notifier.devuni.cz/api/v1/repositories/123 # your endpoint
-NOTIFIER_BACKUP_PASSWORD=...                                    # ZIP password
-```
-
-Optional credentials: `NOTIFIER_RESTORE_TOKEN` (enables the `notifier:*-restore` commands; issued per repository on the control plane), `NOTIFIER_TRIGGER_SECRET` (dedicated inbound trigger secret - without it the backup code doubles as the trigger secret; the control plane must be configured with the same value).
-
-Other options: `NOTIFIER_LOGGING_CHANNEL`, `NOTIFIER_ROUTES_ENABLED`, `NOTIFIER_ROUTE_PREFIX`, `NOTIFIER_ZIP_STRATEGY` (`auto`/`cli`/`php`), `NOTIFIER_SEAL_BACKUPS`, `NOTIFIER_CHUNK_SIZE`, `NOTIFIER_MIN_STORAGE_BACKUP_BYTES`, `NOTIFIER_QUEUE_CONNECTION`, `NOTIFIER_DATABASE_CONNECTION`, `NOTIFIER_POSTGRES_DUMP_BINARY`, `NOTIFIER_POSTGRES_SCHEMA`, `NOTIFIER_HEARTBEAT_ENABLED`. See [`config/notifier.php`](config/notifier.php) for defaults and descriptions.
-
-### Database engine
-
-The package auto-detects which dump tool to use from your Laravel connection driver:
-
-| Driver | Tool used | Install |
-|---|---|---|
-| `mysql`, `mariadb` | `mysqldump` | `apt install mysql-client` or `mariadb-client` |
-| `pgsql` (PostgreSQL) | `pg_dump` | `apt install postgresql-client` |
-| `pgsql` (YugabyteDB) | `ysql_dump` if installed, else `pg_dump` | [YugabyteDB tools](https://docs.yugabyte.com) |
-
-By default the package backs up your app's **default** Laravel connection (`config('database.default')`). Override with `NOTIFIER_DATABASE_CONNECTION=pgsql` if you want a different one.
-
-For PostgreSQL/Yugabyte, force a specific binary via `NOTIFIER_POSTGRES_DUMP_BINARY=ysql_dump` (or `pg_dump`). Non-`public` schemas: set `NOTIFIER_POSTGRES_SCHEMA=myschema`.
+Announcement keys are under [Announcements](#announcements).
 
 ### Exclusions
 
-Arrays - edit `config/notifier.php`:
+Edit the published `config/notifier.php`:
 
 ```php
-'excluded_tables' => ['telescope_entries', 'sessions', 'cache', 'jobs', 'failed_jobs'],
-'excluded_files'  => ['.gitignore', 'temp', 'logs/debug.log'],
+'excluded_tables' => ['telescope_entries', 'telescope_entries_tags'],
+'excluded_files' => ['.gitignore', '.gitkeep', 'temp'],
 ```
 
-### Queue offloading
+-   Tables: plain names, or `schema.table` (`database.table` on MySQL and MariaDB).
+-   Files: relative to `storage/app/public`.
+-   PostgreSQL: a restore drops and recreates `NOTIFIER_POSTGRES_SCHEMA`. Anything in it that isn't in the backup is gone, excluded tables included.
+-   PostgreSQL: exclude both tables of a foreign key or neither, or the restore fails.
+-   PostgreSQL: other schemas are not reset. If they already exist in the target, the restore fails.
 
-API-triggered backups can be offloaded to avoid PHP timeouts:
+## Trigger endpoint
+
+The control plane starts backups through this endpoint.
 
 ```bash
-NOTIFIER_QUEUE_CONNECTION=redis   # or database, sqs, beanstalkd
+curl -X POST https://your-app.com/api/notifier/backup \
+  -H "X-Notifier-Token: <trigger secret>" \
+  -d "type=backup_database"
 ```
 
-Artisan commands always run synchronously regardless of this setting.
+-   `type`: `backup_database` or `backup_storage`. Anything else gets `422`.
+-   Token: `NOTIFIER_TRIGGER_SECRET`, or the backup code if that isn't set.
+-   A missing or wrong token gets `403`. So does every request while a required `.env` key is missing; the reason is in the log.
+-   10 requests per hour per IP, failed ones included. Over the limit: `429`.
+-   Queue: with `NOTIFIER_QUEUE_CONNECTION` other than `sync`, the backup runs on that queue and the endpoint answers `200` at once. A queue worker must run.
+-   One backup per type at a time. Without a queue a second one gets `429`; with a queue it gets `200` and is not queued.
+-   Without a queue, a failed backup returns `500` with an `error_id`. Details are in the log channel.
+
+## Heartbeat
+
+-   Sends agent, PHP and Laravel versions, queue connection, enabled features, disk space and last backup times.
+-   The control plane marks a site stale after 6 h without one. Schedule it hourly.
+-   Exits non-zero when the heartbeat isn't delivered.
+
+## Announcements
+
+-   On by default. Nothing is fetched until `NOTIFIER_URL` is set.
+-   Filament: a banner is added to every panel page automatically.
+-   Blade: `<x-notifier-announcements-notice />`.
+-   Inertia, Vue, React:
+
+```php
+$service = app(\Devuni\Notifier\Services\AnnouncementsService::class);
+
+$service->activeAnnouncements();               // all active announcements
+$service->customAnnouncements('spa-banner');   // dashboard_type "custom", for one element id
+```
+
+-   Cached. A failed fetch shows nothing and never breaks the page.
+-   Own markup: `php artisan vendor:publish --tag=notifier-views`.
+
+| Key                                        | Default                 | Does                                                   |
+| ------------------------------------------ | ----------------------- | ------------------------------------------------------ |
+| `NOTIFIER_ANNOUNCEMENTS_ENABLED`           | `true`                  | Turns announcements on or off.                         |
+| `NOTIFIER_ANNOUNCEMENTS_CACHE_TTL`         | `900`                   | Seconds a response is cached.                          |
+| `NOTIFIER_ANNOUNCEMENTS_FAILURE_CACHE_TTL` | `300`                   | Seconds a failed fetch is cached.                      |
+| `NOTIFIER_ANNOUNCEMENTS_TIMEOUT`           | `5`                     | Request timeout in seconds.                            |
+| `NOTIFIER_ANNOUNCEMENTS_MAX_VISIBLE`       | `5`                     | Banners per location. `0` = all.                       |
+| `NOTIFIER_ANNOUNCEMENTS_FILAMENT`          | `true`                  | Adds the banner to Filament panels.                    |
+| `NOTIFIER_ANNOUNCEMENTS_FILAMENT_HOOK`     | `panels::content.start` | Default render hook.                                   |
+| `NOTIFIER_ANNOUNCEMENTS_RENDER_HOOKS`      | the default hook        | Comma-separated hooks an announcement's `target` may use. |
+
+## Migrating from `devuni/notifier-package`
+
+```bash
+composer remove devuni/notifier-package
+```
+
+```bash
+composer require devuni/notifier-agent
+```
+
+-   Same namespace, env keys, commands, config and routes.
+-   Don't install both. Composer refuses it.
+-   Versions restart at 1.0.0 and include everything from 2.8.0.
+-   Old `BACKUP_CODE`, `BACKUP_URL` and `BACKUP_ZIP_PASSWORD` still work as fallbacks.
+-   From 2.7.x or older: announcements are on by default. `NOTIFIER_ANNOUNCEMENTS_ENABLED=false` turns them off.
 
 ## Security
 
-- **At rest:** AES-256 encrypted archives with `0600` permissions, cleaned up after upload
-- **In transit:** HTTPS-only, `hash_equals` token comparison, per-chunk + full-file SHA-256 verification
-- **No leaks:** ZIP password passed via stdin (not argv - invisible to `ps` / `/proc/*/cmdline`); API errors return opaque UUIDs, not raw exception messages
-- **Report vulnerabilities:** see [security policy](../../security/policy) - don't open public issues
+-   AES-256 archives with `0600` permissions, deleted after upload.
+-   HTTPS only. Requests carrying the token never follow redirects.
+-   Token compared with `hash_equals`. SHA-256 per chunk and per file.
+-   The ZIP password goes through stdin, never the process list.
+-   Report vulnerabilities privately, see [SECURITY.md](SECURITY.md).
 
 ## Links
 
-- [Changelog](CHANGELOG.md) - see what's new in each release
-- [Contributing](CONTRIBUTING.md)
-- [Full config reference](config/notifier.php)
-
-## Credits
-
-- [Ludwig Tomas](https://github.com/ludwigtomas)
-- [All contributors](../../contributors)
+-   [Changelog](CHANGELOG.md)
+-   [Contributing](CONTRIBUTING.md)
+-   [Config with comments](config/notifier.php)
 
 ## License
 
-MIT - see [LICENSE.md](LICENSE.md).
+MIT, see [LICENSE.md](LICENSE.md). By [Ludwig Tomas](https://github.com/ludwigtomas) and [contributors](https://github.com/devuni-cz/notifier-agent/graphs/contributors).
