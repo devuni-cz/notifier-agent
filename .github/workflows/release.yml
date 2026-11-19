@@ -59,7 +59,7 @@ jobs:
         run: |
           # Extract section between this version header and next version header
           VERSION="${{ steps.version.outputs.version }}"
-          CHANGELOG=$(awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found{print}" CHANGELOG.md)
+          CHANGELOG=$(awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found && (NF || body) {body=1; print}" CHANGELOG.md)
 
           # Hard guard: refuse to publish a release that has no CHANGELOG entry.
           # This blocks accidental/empty tags and forces documented release notes.
@@ -71,6 +71,12 @@ jobs:
           # Write to file to preserve multiline
           echo "$CHANGELOG" > /tmp/release_notes.md
 
+          # End with the compare link from the CHANGELOG footer, like the older releases.
+          LINK=$(awk -v ref="[${VERSION}]:" '$1 == ref {print $2; exit}' CHANGELOG.md)
+          if [ -n "$LINK" ]; then
+            printf '\n**Full changelog:** %s\n' "$LINK" >> /tmp/release_notes.md
+          fi
+
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
@@ -78,4 +84,4 @@ jobs:
           body_path: /tmp/release_notes.md
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
-          generate_release_notes: true
+          generate_release_notes: false

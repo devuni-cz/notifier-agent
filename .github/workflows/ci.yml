@@ -43,8 +43,8 @@ jobs:
             laravel: '12.*'
             testbench: '^10.0'
           # The newest Laravel and Testbench that composer.json allows, on the newest
-          # image. When Dependabot widens the constraints for a new Laravel major,
-          # this row tests it without a matrix change.
+          # image. When a new Laravel major is added to composer.json, this row
+          # tests it without a matrix change.
           - php: '8.5'
             laravel: 'latest'
             testbench: '*'
@@ -188,11 +188,19 @@ jobs:
       GH_REPO: ${{ github.repository }}
 
     steps:
-      - name: Keep the weekly schedule turned on
-        run: gh workflow enable ci.yml
+      # A workflow someone turned off by hand stays off. One failed call doesn't
+      # stop the others, but still fails the step.
+      - name: Keep the scheduled workflows turned on
+        run: |
+          rc=0
+          for wf in ci.yml security.yml stale.yml; do
+            state=$(gh api "repos/$GH_REPO/actions/workflows/$wf" --jq .state) || { rc=1; continue; }
+            [ "$state" = disabled_manually ] || gh workflow enable "$wf" || rc=1
+          done
+          exit $rc
 
       - name: Open or update an issue when the weekly run failed
-        if: contains(needs.*.result, 'failure')
+        if: ${{ !cancelled() && (failure() || contains(needs.*.result, 'failure')) }}
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |

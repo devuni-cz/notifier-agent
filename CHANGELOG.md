@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-11-19
+
 ### Added
 
 -   Laravel Boost guidelines and a `notifier-restore` skill. `php artisan boost:install` offers them.
@@ -56,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 -   README documents the restore commands and bootstrapping a fresh deployment ([#27](https://github.com/devuni-cz/notifier-agent/issues/27)).
--   Bootstrapping: keep the original `NOTIFIER_BACKUP_PASSWORD`, restore first, then start backups (a near-empty database is rejected as too small).
+-   Bootstrapping: keep the original `NOTIFIER_BACKUP_PASSWORD`, restore first, then start backups.
 -   `notifier:install` can set `NOTIFIER_RESTORE_TOKEN` and a dedicated trigger secret. Both default to skip.
 -   `notifier:install --force` prefills current values and keeps the backup password by default.
 -   The restore token prompt hides input and rejects the backup code or password.
@@ -85,11 +87,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -   Backup trigger: one running backup per type (`Cache::lock`, 900 s). A second trigger of the same type gets `429`.
 -   `ProcessBackupJob` is unique per type, so a flood of triggers queues one job per type.
 
-## [1.7.1] - 2026-07-23
+## [1.7.1] - 2026-07-25
 
 ### Security
 
--   `guzzlehttp/guzzle` `^7.15.1`, which also pulls `guzzlehttp/psr7` 2.13+. Clears nine advisories (seven Guzzle, two psr7).
+-   `guzzlehttp/guzzle` `^7.15.1`, which also pulls `guzzlehttp/psr7` 2.13+. Clears nine advisories (seven Guzzle, including CVE-2026-59883, two psr7).
 
 ## [1.7.0] - 2026-07-23
 
@@ -255,7 +257,8 @@ First release of `devuni/notifier-agent`, the Laravel client for the [Devuni Not
 -   Namespace `Devuni\Notifier\`, env keys `NOTIFIER_*`.
 -   Migrate with `composer remove devuni/notifier-package && composer require devuni/notifier-agent`.
 
-[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/devuni-cz/notifier-agent/compare/v1.10.0...HEAD
+[1.10.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.3...v1.8.0
 [1.7.3]: https://github.com/devuni-cz/notifier-agent/compare/v1.7.2...v1.7.3
