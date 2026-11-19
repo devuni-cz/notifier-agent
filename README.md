@@ -233,6 +233,12 @@ $service->customAnnouncements('spa-banner');   // dashboard_type "custom", for o
 | `NOTIFIER_ANNOUNCEMENTS_FILAMENT_HOOK`     | `panels::content.start` | Default render hook.                                   |
 | `NOTIFIER_ANNOUNCEMENTS_RENDER_HOOKS`      | the default hook        | Comma-separated hooks an announcement's `target` may use. |
 
+## Laravel Boost
+
+-   The package ships Boost guidelines and a `notifier-restore` skill for AI agents.
+-   `php artisan boost:install` lists `devuni/notifier-agent`. It isn't preselected.
+-   Already using Boost: run `php artisan boost:install` again and pick it. `boost:update` adds it only when run in a terminal, and only on newer Boost versions.
+
 ## Security
 
 -   AES-256 archives with `0600` permissions, deleted after upload.
