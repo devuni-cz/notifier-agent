@@ -16,8 +16,12 @@ function boostFile(string $path): string
     return (string) file_get_contents(dirname(__DIR__, 2).'/resources/boost/'.$path);
 }
 
-it('ships a guideline Boost can render and title', function () {
-    $guideline = boostFile('guidelines/core.blade.php');
+it('ships one Markdown guideline that Boost copies without rendering', function () {
+    // Older Boost renders a .blade.php guideline and would turn the component
+    // example into real markup. Boost keys guidelines by package, so one file.
+    expect(array_map('basename', glob(dirname(__DIR__, 2).'/resources/boost/guidelines/*')))->toBe(['core.md']);
+
+    $guideline = boostFile('guidelines/core.md');
 
     expect($guideline)->toStartWith("# Devuni Notifier Agent\n")
         ->and($guideline)->not->toContain('{{')
@@ -48,7 +52,7 @@ it('names only commands, options and settings that exist', function (string $pat
         ->and(array_diff(array_unique($flags[1]), $options->all()))->toBe([])
         ->and(array_filter(array_unique($keys[0]), fn (string $key): bool => ! str_contains($config, "'{$key}'")))->toBe([]);
 })->with([
-    'guideline' => ['guidelines/core.blade.php'],
+    'guideline' => ['guidelines/core.md'],
     'skill' => ['skills/notifier-restore/SKILL.md'],
 ]);
 

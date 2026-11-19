@@ -20,7 +20,7 @@
 
 - `notifier:database-restore` and `notifier:storage-restore` overwrite live data. Run them only when the user asks, and start with `--dry-run`.
 - Never add `--force`, `--no-snapshot` or `--accept-unverified` on your own. Show the command and let the user decide.
-- Activate the `notifier-restore` skill for a restore or a new deployment.
+- If the `notifier-restore` skill is installed, activate it for a restore or a new deployment.
 
 ## Exclusions
 

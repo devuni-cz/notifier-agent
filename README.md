@@ -236,7 +236,8 @@ $service->customAnnouncements('spa-banner');   // dashboard_type "custom", for o
 ## Laravel Boost
 
 -   The package ships Boost guidelines and a `notifier-restore` skill for AI agents.
--   `php artisan boost:install` offers them. In a project that already uses Boost, `php artisan boost:update` asks to add them.
+-   `php artisan boost:install` lists `devuni/notifier-agent`. It isn't preselected.
+-   Already using Boost: run `php artisan boost:install` again and pick it. `boost:update` adds it only when run in a terminal, and only on newer Boost versions.
 
 ## Security
 
