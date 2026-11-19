@@ -56,8 +56,20 @@ it('does not reveal contents with the wrong password (encryption holds)', functi
     app(PhpZipCreator::class)->create($this->source.'/dump.sql', $this->zipPath, 'right-password');
 
     $zip = openArchive($this->zipPath, 'wrong-password');
-    expect($zip->getFromName('dump.sql'))->toBeFalse();
-    $zip->close();
+
+    // libzip turns most wrong passwords away at the 2-byte password check. One that
+    // passes it decrypts to garbage, which a CRC check then rejects. Either way the
+    // contents stay hidden, and that is what this test is about.
+    try {
+        $read = $zip->getFromName('dump.sql');
+    } catch (ErrorException $e) {
+        expect($e->getMessage())->toContain('CRC error');
+        $read = false;
+    } finally {
+        $zip->close();
+    }
+
+    expect($read)->not->toBe('SECRET');
 });
 
 it('marks every entry as AES-256 encrypted', function () {
