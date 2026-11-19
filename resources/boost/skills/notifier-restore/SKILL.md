@@ -36,10 +36,11 @@ compatibility: Requires devuni/notifier-agent with NOTIFIER_URL, NOTIFIER_BACKUP
 
 ## When the restore is refused
 
+- "does not match NOTIFIER_BACKUP_PASSWORD": check first that `.env` has the original password. Offer `--accept-unverified` only if it does.
 - "has no seal", "does not match its seal", "sealed for a different repository" or "cannot be authenticated": the message ends with `--id=N --accept-unverified=<sha256>` for that file. Ask the user before running it.
 - "sealed on ... more than 35 days ago": the newest backup is old. Pass `--id` if it is the one the user wants.
 - An approved unsealed storage backup goes to `storage/app/notifier-restore/`. The user copies files from there by hand.
-- "a sealed backup of a different type": the wrong command for this backup. Use the other restore command.
+- "a sealed backup of a different type": the server lists this backup under the wrong type. Stop and tell the user. The other restore command won't find it.
 - No `NOTIFIER_RESTORE_TOKEN`: restore is disabled. The user gets the token from the control plane.
 
 ## New deployment
@@ -47,7 +48,7 @@ compatibility: Requires devuni/notifier-agent with NOTIFIER_URL, NOTIFIER_BACKUP
 1. `.env` needs the original `NOTIFIER_BACKUP_PASSWORD`, the same `NOTIFIER_URL` and a `NOTIFIER_RESTORE_TOKEN`. A new password can't decrypt old backups.
 2. Run `php artisan notifier:check`.
 3. Restore the database, then storage, as above. Production needs `--force`; let the user add it.
-4. Start backups only after the restore. The control plane rejects near-empty backups.
+4. Start backups only after the restore. Otherwise a backup of the empty database becomes the newest one.
 
 ## After a failed database restore
 

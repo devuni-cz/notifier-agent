@@ -124,7 +124,7 @@ php artisan notifier:database-restore
 
 1.  Set `.env` with the original `NOTIFIER_BACKUP_PASSWORD`, the same `NOTIFIER_URL` and a `NOTIFIER_RESTORE_TOKEN`.
 2.  Run `notifier:database-restore --force` and `notifier:storage-restore --force`.
-3.  Start backups after the restore. The control plane rejects near-empty backups.
+3.  Start backups after the restore. Otherwise a backup of the empty database becomes the newest one.
 
 -   A new password can't decrypt old backups.
 -   A different `NOTIFIER_URL` points at another repository with other backups.
@@ -237,7 +237,7 @@ $service->customAnnouncements('spa-banner');   // dashboard_type "custom", for o
 
 -   The package ships Boost guidelines and a `notifier-restore` skill for AI agents.
 -   `php artisan boost:install` lists `devuni/notifier-agent`. It isn't preselected.
--   Already using Boost: run `php artisan boost:install` again and pick it. `boost:update` adds it only when run in a terminal, and only on newer Boost versions.
+-   Already using Boost: run `php artisan boost:install` again and pick it. `boost:update` may not offer it.
 
 ## Security
 
