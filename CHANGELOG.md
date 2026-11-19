@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+-   Laravel Boost guidelines and a `notifier-restore` skill. `php artisan boost:install` offers them.
+
 ## [1.9.0] - 2026-11-10
 
 ### Upgrading
