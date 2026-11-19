@@ -1,8 +1,9 @@
 version: 2
 
 updates:
-  # A library: a new major (Laravel 14, Guzzle 9, ...) is added next to the current
-  # range ("^13.14 || ^14.0") in one PR, and CI's "latest" row tests it.
+  # Dependabot can't widen the illuminate/* and testbench ranges together, so a new
+  # major (Laravel 14, Guzzle 9, ...) is added by hand in one PR. CI's "latest" row
+  # then tests it.
   - package-ecosystem: 'composer'
     directory: '/'
     versioning-strategy: widen

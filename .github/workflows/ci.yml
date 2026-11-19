@@ -43,8 +43,8 @@ jobs:
             laravel: '12.*'
             testbench: '^10.0'
           # The newest Laravel and Testbench that composer.json allows, on the newest
-          # image. When Dependabot widens the constraints for a new Laravel major,
-          # this row tests it without a matrix change.
+          # image. When a new Laravel major is added to composer.json, this row
+          # tests it without a matrix change.
           - php: '8.5'
             laravel: 'latest'
             testbench: '*'
@@ -188,8 +188,8 @@ jobs:
       GH_REPO: ${{ github.repository }}
 
     steps:
-      - name: Keep the weekly schedule turned on
-        run: gh workflow enable ci.yml
+      - name: Keep the scheduled workflows turned on
+        run: for wf in ci.yml security.yml stale.yml; do gh workflow enable "$wf"; done
 
       - name: Open or update an issue when the weekly run failed
         if: contains(needs.*.result, 'failure')

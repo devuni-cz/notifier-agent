@@ -21,9 +21,9 @@ jobs:
     name: Bump to next ${{ github.event.inputs.version_type }}
     runs-on: ubuntu-latest
     # The bump only creates the version commit + tag; it runs without an approval
-    # gate so cutting a release isn't blocked here. The actual publish (Release
-    # workflow) stays behind the `release` environment, so a reviewer still
-    # approves before anything is published to GitHub Releases / Packagist.
+    # gate so cutting a release isn't blocked here. Packagist publishes the
+    # version as soon as the tag is pushed; the `release` environment gates only
+    # the GitHub Release.
     permissions:
       contents: write
 
