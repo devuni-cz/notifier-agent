@@ -58,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 -   README documents the restore commands and bootstrapping a fresh deployment ([#27](https://github.com/devuni-cz/notifier-agent/issues/27)).
--   Bootstrapping: keep the original `NOTIFIER_BACKUP_PASSWORD`, restore first, then start backups (a near-empty database is rejected as too small).
+-   Bootstrapping: keep the original `NOTIFIER_BACKUP_PASSWORD`, restore first, then start backups.
 -   `notifier:install` can set `NOTIFIER_RESTORE_TOKEN` and a dedicated trigger secret. Both default to skip.
 -   `notifier:install --force` prefills current values and keeps the backup password by default.
 -   The restore token prompt hides input and rejects the backup code or password.

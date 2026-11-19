@@ -9,7 +9,7 @@
 3. Run workflow
 4. Done! 🎉
 
-> Requires the `RELEASE_PAT` repository secret: the Version Bump job pushes the new tag with it so the Release workflow fires (a tag pushed with the default `GITHUB_TOKEN` would **not** trigger it). The Release then waits on the protected `release` environment's required reviewers before publishing.
+> Requires the `RELEASE_PAT` repository secret: the Version Bump job pushes the new tag with it so the Release workflow fires (a tag pushed with the default `GITHUB_TOKEN` would **not** trigger it). The GitHub Release then waits on the protected `release` environment's required reviewers. Packagist publishes the version as soon as the tag is pushed.
 
 ### Option 2: Manual Release
 
@@ -32,7 +32,7 @@ git push origin v1.0.0
 
 ## 🔄 What Happens on Release
 
-1. **GitHub Actions runs** (gated by the protected `release` environment — a maintainer approves before anything publishes):
+1. **GitHub Actions runs** (the protected `release` environment gates the GitHub Release; Packagist does not wait for it):
 
     - Re-runs the test suite
     - Creates the GitHub release from the matching `CHANGELOG.md` section
