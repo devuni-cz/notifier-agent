@@ -59,7 +59,7 @@ jobs:
         run: |
           # Extract section between this version header and next version header
           VERSION="${{ steps.version.outputs.version }}"
-          CHANGELOG=$(awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found{print}" CHANGELOG.md)
+          CHANGELOG=$(awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found && (NF || body) {body=1; print}" CHANGELOG.md)
 
           # Hard guard: refuse to publish a release that has no CHANGELOG entry.
           # This blocks accidental/empty tags and forces documented release notes.

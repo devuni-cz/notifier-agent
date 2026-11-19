@@ -188,11 +188,19 @@ jobs:
       GH_REPO: ${{ github.repository }}
 
     steps:
+      # A workflow someone turned off by hand stays off. One failed call doesn't
+      # stop the others, but still fails the step.
       - name: Keep the scheduled workflows turned on
-        run: for wf in ci.yml security.yml stale.yml; do gh workflow enable "$wf"; done
+        run: |
+          rc=0
+          for wf in ci.yml security.yml stale.yml; do
+            state=$(gh api "repos/$GH_REPO/actions/workflows/$wf" --jq .state) || { rc=1; continue; }
+            [ "$state" = disabled_manually ] || gh workflow enable "$wf" || rc=1
+          done
+          exit $rc
 
       - name: Open or update an issue when the weekly run failed
-        if: contains(needs.*.result, 'failure')
+        if: ${{ !cancelled() && (failure() || contains(needs.*.result, 'failure')) }}
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
