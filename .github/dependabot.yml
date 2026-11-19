@@ -1,14 +1,18 @@
 version: 2
 
 updates:
+  # A library: a new major (Laravel 14, Guzzle 9, ...) is added next to the current
+  # range ("^13.14 || ^14.0") in one PR, and CI's "latest" row tests it.
   - package-ecosystem: 'composer'
     directory: '/'
+    versioning-strategy: widen
     schedule:
       interval: 'weekly'
       day: 'monday'
     open-pull-requests-limit: 10
     commit-message:
-      prefix: 'composer'
+      prefix: 'chore'
+      include: scope
     labels:
       - 'dependencies'
       - 'php'
@@ -18,8 +22,7 @@ updates:
       laravel:
           patterns:
               - 'laravel/*'
-      orchestra:
-          patterns:
+              - 'illuminate/*'
               - 'orchestra/*'
       pestphp:
           patterns:
@@ -41,11 +44,6 @@ updates:
           update-types:
               - 'minor'
               - 'patch'
-    ignore:
-      - dependency-name: 'laravel/framework'
-        update-types: ['version-update:semver-major']
-      - dependency-name: '*'
-        update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
     directory: /
